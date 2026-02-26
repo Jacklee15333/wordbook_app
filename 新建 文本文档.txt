@@ -1,0 +1,15 @@
+powershell
+# PowerShell window 1: backend
+cd D:\wordbook_app\backend
+venv\Scripts\activate
+uvicorn app.main:app --reload --port 8000
+
+# PowerShell window 2: frontend
+cd D:\wordbook_app\frontend
+flutter run -d chrome
+
+
+
+
+Email: admin@wordbook.local
+Password: admin123
