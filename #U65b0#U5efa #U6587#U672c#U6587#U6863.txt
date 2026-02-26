@@ -1,3 +1,4 @@
+powershell
 # PowerShell window 1: backend
 cd D:\wordbook_app\backend
 venv\Scripts\activate
@@ -10,10 +11,5 @@ flutter run -d chrome
 
 
 
-Email: 
-
-admin@wordbook.local
-
-Password: 
-
-admin123
+Email: admin@wordbook.local
+Password: admin123

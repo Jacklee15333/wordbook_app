@@ -98,7 +98,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildBody(BuildContext context, Map<String, dynamic> wb, StudyState study) {
-    if (study.isLoading && study.totalCards == 0) {
+    if (study.isLoading && study.totalWords == 0) {
       // Auto-load today's task
       Future.microtask(() {
         ref.read(studyProvider.notifier).loadTodayTask(wb['id']);

@@ -99,6 +99,26 @@ class ApiService {
     final r = await _dio.get('/words/search', queryParameters: {'q': query});
     return r.data;
   }
+
+  /// 导入单词到词书（文本格式，每行一个单词）
+  Future<Map<String, dynamic>> importWordsToWordbook({
+    required String wordbookId,
+    required String textContent,
+  }) async {
+    // 构造 multipart 文件上传
+    final formData = FormData.fromMap({
+      'file': MultipartFile.fromString(
+        textContent,
+        filename: 'import.txt',
+      ),
+    });
+    final r = await _dio.post(
+      '/wordbooks/$wordbookId/import',
+      data: formData,
+      options: Options(contentType: 'multipart/form-data'),
+    );
+    return Map<String, dynamic>.from(r.data);
+  }
 }
 
 class _AuthInterceptor extends Interceptor {

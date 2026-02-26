@@ -17,10 +17,13 @@ final wordbooksProvider = FutureProvider<List<dynamic>>((ref) async {
   return api.getWordbooks();
 });
 
-// Progress provider
-final progressProvider = FutureProvider.family<Map<String, dynamic>, String>((ref, wordbookId) async {
+// Progress provider - autoDispose so it refreshes when re-watched
+final progressProvider = FutureProvider.autoDispose.family<Map<String, dynamic>, String>((ref, wordbookId) async {
   final api = ref.read(apiServiceProvider);
-  return api.getProgress(wordbookId);
+  debugPrint('[HOME] 📊 正在获取词书进度: $wordbookId');
+  final result = await api.getProgress(wordbookId);
+  debugPrint('[HOME] 📊 进度结果: $result');
+  return result;
 });
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -38,8 +41,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _loadInitialData() async {
-    // Wait for wordbooks to load, then auto-select first one
     final wordbooks = await ref.read(wordbooksProvider.future);
+    debugPrint('[HOME] 📚 加载了 ${wordbooks.length} 本词书');
     if (wordbooks.isNotEmpty && ref.read(selectedWordbookProvider) == null) {
       ref.read(selectedWordbookProvider.notifier).state =
           Map<String, dynamic>.from(wordbooks.first);
@@ -54,16 +57,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('WordBook'),
+        title: const Text('单词本'),
         actions: [
           IconButton(
             icon: const Icon(Icons.book_outlined),
-            tooltip: 'Wordbooks',
+            tooltip: '词书管理',
             onPressed: () async {
               await Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const WordbookListScreen()));
-              // Reload after returning
               if (selectedWb != null) {
+                ref.invalidate(progressProvider(selectedWb['id']));
                 ref.read(studyProvider.notifier).loadTodayTask(selectedWb['id']);
               }
             },
@@ -80,7 +83,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w600)),
               ),
               const PopupMenuDivider(),
-              const PopupMenuItem(value: 'logout', child: Text('Logout')),
+              const PopupMenuItem(value: 'logout', child: Text('退出登录')),
             ],
           ),
         ],
@@ -90,6 +93,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           : RefreshIndicator(
               onRefresh: () async {
                 ref.invalidate(wordbooksProvider);
+                ref.invalidate(progressProvider(selectedWb['id']));
                 await ref.read(studyProvider.notifier).loadTodayTask(selectedWb['id']);
               },
               child: _buildBody(context, selectedWb, study),
@@ -98,8 +102,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildBody(BuildContext context, Map<String, dynamic> wb, StudyState study) {
-    if (study.isLoading && study.totalCards == 0) {
-      // Auto-load today's task
+    if (study.isLoading && study.totalWords == 0) {
       Future.microtask(() {
         ref.read(studyProvider.notifier).loadTodayTask(wb['id']);
       });
@@ -111,23 +114,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        // Selected wordbook card
         _buildWordbookCard(wb),
         const SizedBox(height: 20),
-
-        // Today's task card
         _buildTodayCard(context, study, wb['id']),
         const SizedBox(height: 20),
-
-        // Progress card
         progress.when(
           data: (p) => _buildProgressCard(p),
-          loading: () => const SizedBox.shrink(),
-          error: (_, __) => const SizedBox.shrink(),
+          loading: () => const Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ),
+          error: (e, _) {
+            debugPrint('[HOME] ❌ 进度加载错误: $e');
+            return Card(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text('加载进度失败: $e',
+                  style: const TextStyle(color: AppColors.error)),
+              ),
+            );
+          },
         ),
         const SizedBox(height: 20),
-
-        // Streak
         if (study.streakDays > 0)
           _buildStreakCard(study.streakDays),
       ],
@@ -156,18 +166,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(wb['name'] ?? 'Unknown',
+                  Text(wb['name'] ?? '未知',
                     style: const TextStyle(color: Colors.white,
                       fontSize: 18, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 4),
-                  Text('${wb['word_count'] ?? 0} words',
+                  Text('${wb['word_count'] ?? 0} 个单词',
                     style: TextStyle(color: Colors.white.withOpacity(0.8))),
                 ],
               ),
             ),
+            // 导入按钮
+            IconButton(
+              icon: Icon(Icons.upload_file, color: Colors.white.withOpacity(0.9)),
+              tooltip: '导入单词',
+              onPressed: () => _showImportDialog(wb),
+            ),
             Icon(Icons.chevron_right, color: Colors.white.withOpacity(0.8)),
           ],
         ),
+      ),
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // 导入词库对话框
+  // ════════════════════════════════════════════════════════════
+
+  void _showImportDialog(Map<String, dynamic> wb) {
+    showDialog(
+      context: context,
+      builder: (ctx) => _ImportDialog(
+        wordbookId: wb['id'],
+        wordbookName: wb['name'] ?? '',
+        onImported: () {
+          ref.invalidate(wordbooksProvider);
+          ref.invalidate(progressProvider(wb['id']));
+          ref.read(studyProvider.notifier).loadTodayTask(wb['id']);
+        },
       ),
     );
   }
@@ -181,17 +216,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
-            const Text("Today's Tasks",
+            const Text('今日任务',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _buildStatItem('New', study.totalNew, AppColors.primary),
+                _buildStatItem('新词', study.totalNew, AppColors.primary),
                 Container(width: 1, height: 40, color: AppColors.divider),
-                _buildStatItem('Review', study.totalReview, AppColors.accent),
+                _buildStatItem('复习', study.totalReview, AppColors.accent),
                 Container(width: 1, height: 40, color: AppColors.divider),
-                _buildStatItem('Total', totalToday, AppColors.textPrimary),
+                _buildStatItem('总计', totalToday, AppColors.textPrimary),
               ],
             ),
             const SizedBox(height: 24),
@@ -200,14 +235,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               height: 52,
               child: ElevatedButton.icon(
                 onPressed: hasTask
-                    ? () {
+                    ? () async {
                         ref.read(studyProvider.notifier).loadTodayTask(wordbookId);
-                        Navigator.push(context,
+                        await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const StudyScreen()));
+                        // ★ 学完回来刷新进度
+                        debugPrint('[HOME] 📊 学习结束，刷新进度...');
+                        ref.invalidate(progressProvider(wordbookId));
+                        ref.read(studyProvider.notifier).loadTodayTask(wordbookId);
                       }
                     : null,
                 icon: Icon(hasTask ? Icons.play_arrow_rounded : Icons.check_circle_outline),
-                label: Text(hasTask ? 'Start Learning' : 'All done for today!'),
+                label: Text(hasTask ? '开始学习' : '今日任务已完成！'),
               ),
             ),
           ],
@@ -231,7 +270,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildProgressCard(Map<String, dynamic> progress) {
     final total = progress['total_words'] ?? 0;
     final mastered = progress['mastered'] ?? 0;
+    final learning = progress['stats']?['learning'] ?? 0;
+    final newCount = progress['stats']?['new'] ?? 0;
     final percent = total > 0 ? mastered / total : 0.0;
+
+    debugPrint('[HOME] 📊 构建进度卡: total=$total, mastered=$mastered, learning=$learning, new=$newCount');
 
     return Card(
       child: Padding(
@@ -253,14 +296,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Learning Progress',
+                  const Text('学习进度',
                     style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
                   const SizedBox(height: 12),
-                  _buildProgressRow('Mastered', mastered, AppColors.success),
+                  _buildProgressRow('已掌握', mastered, AppColors.success),
                   const SizedBox(height: 6),
-                  _buildProgressRow('Learning', progress['stats']?['learning'] ?? 0, AppColors.accent),
+                  _buildProgressRow('学习中', learning, AppColors.accent),
                   const SizedBox(height: 6),
-                  _buildProgressRow('New', progress['stats']?['new'] ?? 0, AppColors.textHint),
+                  _buildProgressRow('未学习', newCount, AppColors.textHint),
                 ],
               ),
             ),
@@ -298,14 +341,149 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('$days day streak!',
+              Text('连续打卡 $days 天！',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              const Text('Keep it up!',
+              const Text('继续加油！',
                 style: TextStyle(color: AppColors.textSecondary)),
             ],
           ),
         ],
       ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// 导入对话框
+// ════════════════════════════════════════════════════════════════════
+
+class _ImportDialog extends ConsumerStatefulWidget {
+  final String wordbookId;
+  final String wordbookName;
+  final VoidCallback onImported;
+
+  const _ImportDialog({
+    required this.wordbookId,
+    required this.wordbookName,
+    required this.onImported,
+  });
+
+  @override
+  ConsumerState<_ImportDialog> createState() => _ImportDialogState();
+}
+
+class _ImportDialogState extends ConsumerState<_ImportDialog> {
+  final _textController = TextEditingController();
+  bool _isImporting = false;
+  String? _result;
+  String? _error;
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _import() async {
+    final text = _textController.text.trim();
+    if (text.isEmpty) return;
+
+    setState(() {
+      _isImporting = true;
+      _result = null;
+      _error = null;
+    });
+
+    try {
+      final api = ref.read(apiServiceProvider);
+      final result = await api.importWordsToWordbook(
+        wordbookId: widget.wordbookId,
+        textContent: text,
+      );
+      debugPrint('[IMPORT] ✅ 导入结果: $result');
+
+      setState(() {
+        _isImporting = false;
+        _result = '导入完成！'
+            '\n匹配: ${result['found']} 个'
+            '\n新增: ${result['added']} 个'
+            '${(result['not_found_count'] ?? 0) > 0 ? '\n未找到: ${result['not_found_count']} 个' : ''}';
+      });
+      widget.onImported();
+    } catch (e) {
+      debugPrint('[IMPORT] ❌ 导入错误: $e');
+      setState(() {
+        _isImporting = false;
+        _error = '导入失败: $e';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('导入单词到「${widget.wordbookName}」'),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '每行一个单词，支持直接粘贴：',
+              style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _textController,
+              maxLines: 8,
+              decoration: InputDecoration(
+                hintText: 'apple\nbanana\ncomfortable\n...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.all(12),
+              ),
+              style: const TextStyle(fontSize: 14, fontFamily: 'monospace'),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '提示：单词需要已存在于词典中才能匹配成功',
+              style: TextStyle(fontSize: 12, color: AppColors.textHint),
+            ),
+            if (_result != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(_result!,
+                  style: const TextStyle(fontSize: 13, color: AppColors.success)),
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!,
+                style: const TextStyle(fontSize: 13, color: AppColors.error)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('关闭'),
+        ),
+        ElevatedButton(
+          onPressed: _isImporting ? null : _import,
+          child: _isImporting
+              ? const SizedBox(width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('导入'),
+        ),
+      ],
     );
   }
 }
