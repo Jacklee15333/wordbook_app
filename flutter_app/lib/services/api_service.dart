@@ -99,6 +99,51 @@ class ApiService {
     final r = await _dio.get('/words/search', queryParameters: {'q': query});
     return r.data;
   }
+
+  // ============================================================
+  // ===== 新增：导入 v2（异步处理 + 词库匹配 + AI生成） =====
+  // ============================================================
+
+  /// 提交导入任务（v2 - 异步后台处理）
+  /// 返回 { task_id, message, total_words }
+  Future<Map<String, dynamic>> importWordsV2(
+      String wordbookId, List<String> words) async {
+    final r = await _dio.post(
+      '/wordbooks/$wordbookId/import-v2',
+      data: {'words': words},
+    );
+    return r.data;
+  }
+
+  /// 获取导入任务进度（轮询用）
+  /// 返回 { id, status, total_words, matched_count, ai_generated_count, ai_failed_count, progress }
+  Future<Map<String, dynamic>> getImportProgress(String taskId) async {
+    final r = await _dio.get('/import-tasks/$taskId/progress');
+    return r.data;
+  }
+
+  /// 获取导入任务的最终结果
+  /// 返回 { task, matched[], generated[], failed[] }
+  Future<Map<String, dynamic>> getImportResults(String taskId) async {
+    final r = await _dio.get('/import-tasks/$taskId/results');
+    return r.data;
+  }
+
+  /// 审核通过并入库（管理员操作）
+  Future<Map<String, dynamic>> approveImportItem(
+      String itemId, {Map<String, dynamic>? editedData}) async {
+    final r = await _dio.post(
+      '/admin/import-items/$itemId/approve',
+      data: editedData != null ? {'generated_data': editedData} : {},
+    );
+    return r.data;
+  }
+
+  /// 拒绝导入项（管理员操作）
+  Future<Map<String, dynamic>> rejectImportItem(String itemId) async {
+    final r = await _dio.post('/admin/import-items/$itemId/reject');
+    return r.data;
+  }
 }
 
 class _AuthInterceptor extends Interceptor {

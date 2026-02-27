@@ -1,0 +1,1532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>词汇学习系统 - 管理后台</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary: #4f46e5;
+            --primary-light: #818cf8;
+            --primary-bg: #eef2ff;
+            --success: #059669;
+            --success-bg: #d1fae5;
+            --warning: #d97706;
+            --warning-bg: #fef3c7;
+            --danger: #dc2626;
+            --danger-bg: #fee2e2;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+            --sidebar-width: 240px;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--gray-100);
+            color: var(--gray-800);
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* ===== Sidebar ===== */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--gray-900);
+            color: white;
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            overflow-y: auto;
+            z-index: 100;
+        }
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--gray-700);
+        }
+        .sidebar-header h1 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .sidebar-header p {
+            font-size: 12px;
+            color: var(--gray-400);
+            margin-top: 4px;
+        }
+        .sidebar-nav {
+            padding: 12px 0;
+        }
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            cursor: pointer;
+            color: var(--gray-300);
+            transition: all 0.2s;
+            font-size: 14px;
+            gap: 10px;
+        }
+        .nav-item:hover {
+            background: var(--gray-700);
+            color: white;
+        }
+        .nav-item.active {
+            background: var(--primary);
+            color: white;
+        }
+        .nav-item .icon {
+            width: 20px;
+            text-align: center;
+        }
+
+        /* ===== Main Content ===== */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            flex: 1;
+            padding: 24px;
+            min-height: 100vh;
+        }
+        .page-header {
+            margin-bottom: 24px;
+        }
+        .page-header h2 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .page-header p {
+            color: var(--gray-500);
+            margin-top: 4px;
+        }
+
+        /* ===== Cards ===== */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .stat-card .label {
+            font-size: 13px;
+            color: var(--gray-500);
+            margin-bottom: 8px;
+        }
+        .stat-card .value {
+            font-size: 28px;
+            font-weight: 700;
+        }
+        .stat-card .sub {
+            font-size: 12px;
+            color: var(--gray-400);
+            margin-top: 4px;
+        }
+
+        /* ===== Table ===== */
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .table-toolbar {
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--gray-200);
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .table-toolbar h3 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .toolbar-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px 20px;
+            text-align: left;
+            font-size: 14px;
+        }
+        th {
+            background: var(--gray-50);
+            font-weight: 600;
+            color: var(--gray-600);
+            border-bottom: 1px solid var(--gray-200);
+        }
+        td {
+            border-bottom: 1px solid var(--gray-100);
+        }
+        tr:hover td {
+            background: var(--gray-50);
+        }
+
+        /* ===== Buttons ===== */
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+        .btn-primary:hover {
+            background: var(--primary-light);
+        }
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+        .btn-success:hover {
+            opacity: 0.9;
+        }
+        .btn-warning {
+            background: var(--warning);
+            color: white;
+        }
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+        .btn-danger:hover {
+            opacity: 0.9;
+        }
+        .btn-outline {
+            background: white;
+            border: 1px solid var(--gray-300);
+            color: var(--gray-700);
+        }
+        .btn-outline:hover {
+            background: var(--gray-50);
+        }
+        .btn-sm {
+            padding: 4px 10px;
+            font-size: 12px;
+        }
+
+        /* ===== Badges ===== */
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .badge-success { background: var(--success-bg); color: var(--success); }
+        .badge-warning { background: var(--warning-bg); color: var(--warning); }
+        .badge-danger { background: var(--danger-bg); color: var(--danger); }
+        .badge-primary { background: var(--primary-bg); color: var(--primary); }
+        .badge-gray { background: var(--gray-200); color: var(--gray-600); }
+
+        /* ===== Input ===== */
+        .input {
+            padding: 8px 12px;
+            border: 1px solid var(--gray-300);
+            border-radius: 8px;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
+        }
+        .input-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* ===== Sections ===== */
+        .section { display: none; }
+        .section.active { display: block; }
+
+        /* ===== Modal ===== */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal {
+            background: white;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-header h3 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .modal-body {
+            padding: 24px;
+        }
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid var(--gray-200);
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 22px;
+            cursor: pointer;
+            color: var(--gray-400);
+            padding: 4px;
+        }
+        .close-btn:hover { color: var(--gray-600); }
+
+        /* ===== Form ===== */
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--gray-700);
+            margin-bottom: 6px;
+        }
+        .form-group .input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+        }
+        .form-group textarea {
+            padding: 8px 12px;
+            border: 1px solid var(--gray-300);
+            border-radius: 8px;
+            font-size: 13px;
+            outline: none;
+            resize: vertical;
+            min-height: 80px;
+            font-family: inherit;
+        }
+        .form-group textarea:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
+        }
+        .form-group select {
+            padding: 8px 12px;
+            border: 1px solid var(--gray-300);
+            border-radius: 8px;
+            font-size: 13px;
+            outline: none;
+            background: white;
+        }
+
+        /* ===== Pagination ===== */
+        .pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-top: 1px solid var(--gray-200);
+        }
+        .pagination-info {
+            font-size: 13px;
+            color: var(--gray-500);
+        }
+        .pagination-buttons {
+            display: flex;
+            gap: 4px;
+        }
+
+        /* ===== Import Log Split View ===== */
+        .log-split {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .log-panel {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .log-panel-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .log-panel-header h4 {
+            font-size: 15px;
+            font-weight: 600;
+        }
+        .log-panel-body {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .log-word-item {
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--gray-100);
+        }
+        .log-word-item:last-child {
+            border-bottom: none;
+        }
+        .log-word-item .word-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .log-word-item .word-name {
+            font-weight: 600;
+            font-size: 15px;
+        }
+        .log-word-item .word-meaning {
+            font-size: 13px;
+            color: var(--gray-600);
+            line-height: 1.5;
+        }
+        .log-word-item .word-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .log-word-item .word-meta {
+            font-size: 11px;
+            color: var(--gray-400);
+            margin-top: 4px;
+        }
+
+        /* ===== Progress Bar ===== */
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--gray-200);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-bar .fill {
+            height: 100%;
+            background: var(--primary);
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+
+        /* ===== Toast ===== */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 2000;
+        }
+        .toast {
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            animation: slideIn 0.3s ease;
+        }
+        .toast-success { background: var(--success); color: white; }
+        .toast-error { background: var(--danger); color: white; }
+        .toast-info { background: var(--primary); color: white; }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* ===== Loading ===== */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--gray-400);
+        }
+        .spinner {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid var(--gray-200);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ===== Responsive ===== */
+        @media (max-width: 768px) {
+            .log-split {
+                grid-template-columns: 1fr;
+            }
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--gray-400);
+        }
+        .empty-state .icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar">
+    <div class="sidebar-header">
+        <h1>📖 词汇管理系统</h1>
+        <p>Administration Panel</p>
+    </div>
+    <nav class="sidebar-nav">
+        <div class="nav-item active" data-section="dashboard">
+            <span class="icon">📊</span>
+            <span>仪表盘</span>
+        </div>
+        <div class="nav-item" data-section="users">
+            <span class="icon">👥</span>
+            <span>用户管理</span>
+        </div>
+        <div class="nav-item" data-section="vocabulary">
+            <span class="icon">📚</span>
+            <span>词库管理</span>
+        </div>
+        <div class="nav-item" data-section="import-logs">
+            <span class="icon">📝</span>
+            <span>处理日志</span>
+        </div>
+    </nav>
+</div>
+
+<!-- Main Content -->
+<div class="main-content">
+
+    <!-- ========== Dashboard Section ========== -->
+    <div id="section-dashboard" class="section active">
+        <div class="page-header">
+            <h2>仪表盘</h2>
+            <p>系统概览与统计数据</p>
+        </div>
+        <div class="stats-grid" id="dashboard-stats">
+            <div class="stat-card">
+                <div class="label">注册用户</div>
+                <div class="value" id="stat-users">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">词库总量 (SQLite)</div>
+                <div class="value" id="stat-vocabulary">-</div>
+                <div class="sub" id="stat-vocab-sources"></div>
+            </div>
+            <div class="stat-card">
+                <div class="label">单词总量 (PostgreSQL)</div>
+                <div class="value" id="stat-words">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">词书数量</div>
+                <div class="value" id="stat-wordbooks">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">导入任务</div>
+                <div class="value" id="stat-tasks">-</div>
+                <div class="sub" id="stat-tasks-sub"></div>
+            </div>
+            <div class="stat-card">
+                <div class="label">待审核</div>
+                <div class="value" id="stat-pending" style="color: var(--warning)">-</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== Users Section ========== -->
+    <div id="section-users" class="section">
+        <div class="page-header">
+            <h2>用户管理</h2>
+            <p>管理系统用户和权限</p>
+        </div>
+        <div class="table-container">
+            <div class="table-toolbar">
+                <h3>用户列表</h3>
+                <div class="toolbar-actions">
+                    <input type="text" class="input" placeholder="搜索用户..." id="user-search" onkeyup="debounceUserSearch()">
+                    <button class="btn btn-outline" onclick="loadUsers()">刷新</button>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>用户名</th>
+                        <th>邮箱</th>
+                        <th>角色</th>
+                        <th>状态</th>
+                        <th>注册时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="users-tbody">
+                    <tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr>
+                </tbody>
+            </table>
+            <div class="pagination" id="users-pagination"></div>
+        </div>
+    </div>
+
+    <!-- ========== Vocabulary Section ========== -->
+    <div id="section-vocabulary" class="section">
+        <div class="page-header">
+            <h2>词库管理</h2>
+            <p>管理 vocabulary.db 基础词库</p>
+        </div>
+        <div class="table-container">
+            <div class="table-toolbar">
+                <h3>词库列表</h3>
+                <div class="toolbar-actions">
+                    <input type="text" class="input" placeholder="搜索单词或释义..." id="vocab-search" onkeyup="debounceVocabSearch()">
+                    <button class="btn btn-primary" onclick="showAddVocabModal()">+ 添加词条</button>
+                    <button class="btn btn-outline" onclick="loadVocabulary()">刷新</button>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>单词</th>
+                        <th>释义</th>
+                        <th>音标</th>
+                        <th>来源</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="vocab-tbody">
+                    <tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr>
+                </tbody>
+            </table>
+            <div class="pagination" id="vocab-pagination"></div>
+        </div>
+    </div>
+
+    <!-- ========== Import Logs Section ========== -->
+    <div id="section-import-logs" class="section">
+        <div class="page-header">
+            <h2>处理日志</h2>
+            <p>查看导入任务的处理结果和审核管理</p>
+        </div>
+
+        <!-- Task List -->
+        <div class="table-container" id="task-list-container">
+            <div class="table-toolbar">
+                <h3>导入任务列表</h3>
+                <div class="toolbar-actions">
+                    <select class="input" id="task-status-filter" onchange="loadImportTasks()">
+                        <option value="">全部状态</option>
+                        <option value="pending">等待处理</option>
+                        <option value="processing">处理中</option>
+                        <option value="completed">已完成</option>
+                        <option value="failed">失败</option>
+                    </select>
+                    <button class="btn btn-outline" onclick="loadImportTasks()">刷新</button>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>任务ID</th>
+                        <th>状态</th>
+                        <th>总词数</th>
+                        <th>匹配</th>
+                        <th>AI生成</th>
+                        <th>失败</th>
+                        <th>已入库</th>
+                        <th>创建时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="tasks-tbody">
+                    <tr><td colspan="9" class="loading"><div class="spinner"></div></td></tr>
+                </tbody>
+            </table>
+            <div class="pagination" id="tasks-pagination"></div>
+        </div>
+
+        <!-- Task Detail (split view) -->
+        <div id="task-detail-container" style="display:none;">
+            <div style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
+                <button class="btn btn-outline" onclick="backToTaskList()">← 返回任务列表</button>
+                <div>
+                    <span class="badge badge-primary" id="detail-task-status"></span>
+                    <span style="margin-left:8px; font-size:13px; color:var(--gray-500);" id="detail-task-info"></span>
+                </div>
+            </div>
+
+            <!-- Progress -->
+            <div class="stat-card" style="margin-bottom:20px;" id="detail-progress-card">
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <span class="label">处理进度</span>
+                    <span id="detail-progress-text" style="font-size:13px; font-weight:600;">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="fill" id="detail-progress-bar" style="width:0%"></div>
+                </div>
+            </div>
+
+            <!-- Split View: Matched | Generated -->
+            <div class="log-split">
+                <!-- Left: Matched -->
+                <div class="log-panel">
+                    <div class="log-panel-header">
+                        <h4>✅ 词库匹配 <span class="badge badge-success" id="matched-count">0</span></h4>
+                    </div>
+                    <div class="log-panel-body" id="matched-list">
+                        <div class="empty-state">
+                            <div class="icon">📭</div>
+                            <p>暂无匹配结果</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: AI Generated -->
+                <div class="log-panel">
+                    <div class="log-panel-header">
+                        <h4>🤖 AI / 词典生成 <span class="badge badge-warning" id="generated-count">0</span></h4>
+                        <div>
+                            <button class="btn btn-success btn-sm" onclick="approveAllGenerated()">全部入库</button>
+                        </div>
+                    </div>
+                    <div class="log-panel-body" id="generated-list">
+                        <div class="empty-state">
+                            <div class="icon">📭</div>
+                            <p>暂无生成结果</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Failed items -->
+            <div class="log-panel" style="margin-top:20px;" id="failed-panel">
+                <div class="log-panel-header">
+                    <h4>❌ 生成失败 <span class="badge badge-danger" id="failed-count">0</span></h4>
+                </div>
+                <div class="log-panel-body" id="failed-list">
+                    <div class="empty-state">
+                        <div class="icon">✨</div>
+                        <p>没有失败项</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- Modal: Add/Edit Vocabulary -->
+<div class="modal-overlay" id="vocab-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 id="vocab-modal-title">添加词条</h3>
+            <button class="close-btn" onclick="closeModal('vocab-modal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="vocab-edit-id">
+            <div class="form-group">
+                <label>单词 *</label>
+                <input type="text" class="input" id="vocab-word" placeholder="输入英文单词">
+            </div>
+            <div class="form-group">
+                <label>释义 *</label>
+                <textarea id="vocab-meaning" placeholder="中文释义，如：n.(C)能力；才能"></textarea>
+            </div>
+            <div class="form-group">
+                <label>音标</label>
+                <input type="text" class="input" id="vocab-phonetic" placeholder="/əˈbɪlɪti/">
+            </div>
+            <div class="form-group">
+                <label>难度等级</label>
+                <select id="vocab-difficulty">
+                    <option value="">未设置</option>
+                    <option value="A1">A1 - 入门</option>
+                    <option value="A2">A2 - 基础</option>
+                    <option value="B1">B1 - 中级</option>
+                    <option value="B2">B2 - 中高级</option>
+                    <option value="C1">C1 - 高级</option>
+                    <option value="C2">C2 - 精通</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>例句</label>
+                <textarea id="vocab-examples" placeholder="输入例句"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeModal('vocab-modal')">取消</button>
+            <button class="btn btn-primary" onclick="saveVocabulary()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Edit Generated Data -->
+<div class="modal-overlay" id="edit-generated-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>编辑生成内容</h3>
+            <button class="close-btn" onclick="closeModal('edit-generated-modal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="edit-item-id">
+            <div class="form-group">
+                <label>单词</label>
+                <input type="text" class="input" id="edit-word" readonly style="background:var(--gray-100);">
+            </div>
+            <div class="form-group">
+                <label>简洁释义（存入词库）*</label>
+                <textarea id="edit-meaning" placeholder="如：n.(C)能力；才能"></textarea>
+            </div>
+            <div class="form-group">
+                <label>音标</label>
+                <input type="text" class="input" id="edit-phonetic" placeholder="/əˈbɪlɪti/">
+            </div>
+            <div class="form-group">
+                <label>详细释义 (JSON)</label>
+                <textarea id="edit-definitions" rows="5" placeholder='[{"pos":"noun","definition":"...","definition_cn":"..."}]'></textarea>
+            </div>
+            <div class="form-group">
+                <label>例句 (JSON)</label>
+                <textarea id="edit-examples" rows="3" placeholder='[{"sentence":"...","translation":"..."}]'></textarea>
+            </div>
+            <div class="form-group">
+                <label>难度</label>
+                <select id="edit-difficulty">
+                    <option value="">未设置</option>
+                    <option value="A1">A1</option>
+                    <option value="A2">A2</option>
+                    <option value="B1">B1</option>
+                    <option value="B2">B2</option>
+                    <option value="C1">C1</option>
+                    <option value="C2">C2</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeModal('edit-generated-modal')">取消</button>
+            <button class="btn btn-success" onclick="saveAndApproveEdited()">保存并入库</button>
+        </div>
+    </div>
+</div>
+
+
+<script>
+// ==================== Config ====================
+const API_BASE = '/api/v1/admin';
+const API_V1 = '/api/v1';
+
+// ==================== Navigation ====================
+document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+        const section = item.dataset.section;
+        switchSection(section);
+    });
+});
+
+function switchSection(section) {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelector(`.nav-item[data-section="${section}"]`).classList.add('active');
+    document.getElementById(`section-${section}`).classList.add('active');
+
+    // Load data for section
+    switch(section) {
+        case 'dashboard': loadDashboard(); break;
+        case 'users': loadUsers(); break;
+        case 'vocabulary': loadVocabulary(); break;
+        case 'import-logs': loadImportTasks(); break;
+    }
+}
+
+// ==================== API Helper ====================
+async function api(url, options = {}) {
+    try {
+        const resp = await fetch(url, {
+            headers: { 'Content-Type': 'application/json', ...options.headers },
+            ...options,
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+            throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
+        return await resp.json();
+    } catch (e) {
+        console.error('API Error:', e);
+        throw e;
+    }
+}
+
+// ==================== Toast ====================
+function toast(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    const div = document.createElement('div');
+    div.className = `toast toast-${type}`;
+    div.textContent = message;
+    container.appendChild(div);
+    setTimeout(() => div.remove(), 3000);
+}
+
+// ==================== Modal ====================
+function openModal(id) {
+    document.getElementById(id).classList.add('active');
+}
+function closeModal(id) {
+    document.getElementById(id).classList.remove('active');
+}
+
+// ==================== Dashboard ====================
+async function loadDashboard() {
+    try {
+        const data = await api(`${API_BASE}/dashboard`);
+        document.getElementById('stat-users').textContent = data.users.total;
+        document.getElementById('stat-vocabulary').textContent = data.vocabulary.total;
+        document.getElementById('stat-words').textContent = data.words.total;
+        document.getElementById('stat-wordbooks').textContent = data.wordbooks.total;
+        document.getElementById('stat-tasks').textContent = data.import_tasks.total;
+        document.getElementById('stat-tasks-sub').textContent =
+            `处理中: ${data.import_tasks.processing} | 完成: ${data.import_tasks.completed}`;
+        document.getElementById('stat-pending').textContent = data.pending_review;
+
+        const sources = data.vocabulary.by_source || {};
+        const sourceParts = Object.entries(sources).map(([k,v]) => `${k}: ${v}`);
+        document.getElementById('stat-vocab-sources').textContent = sourceParts.join(' | ');
+    } catch (e) {
+        toast('加载仪表盘失败: ' + e.message, 'error');
+    }
+}
+
+// ==================== Users ====================
+let usersPage = 1;
+let userSearchTimer;
+
+function debounceUserSearch() {
+    clearTimeout(userSearchTimer);
+    userSearchTimer = setTimeout(() => { usersPage = 1; loadUsers(); }, 300);
+}
+
+async function loadUsers() {
+    const search = document.getElementById('user-search').value;
+    const tbody = document.getElementById('users-tbody');
+    tbody.innerHTML = '<tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr>';
+
+    try {
+        let url = `${API_BASE}/users?page=${usersPage}&page_size=20`;
+        if (search) url += `&search=${encodeURIComponent(search)}`;
+        const data = await api(url);
+
+        if (data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无用户</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.items.map(u => `
+            <tr>
+                <td><strong>${esc(u.username)}</strong></td>
+                <td>${esc(u.email || '-')}</td>
+                <td><span class="badge ${u.role === 'admin' ? 'badge-primary' : 'badge-gray'}">${u.role || 'user'}</span></td>
+                <td><span class="badge ${u.is_active !== false ? 'badge-success' : 'badge-danger'}">${u.is_active !== false ? '启用' : '禁用'}</span></td>
+                <td>${formatDate(u.created_at)}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline" onclick="toggleUserRole('${u.id}', '${u.role}')">
+                        ${u.role === 'admin' ? '取消管理员' : '设为管理员'}
+                    </button>
+                    <button class="btn btn-sm ${u.is_active !== false ? 'btn-danger' : 'btn-success'}" onclick="toggleUserActive('${u.id}', ${u.is_active !== false})">
+                        ${u.is_active !== false ? '禁用' : '启用'}
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+
+        renderPagination('users-pagination', data, (p) => { usersPage = p; loadUsers(); });
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state" style="color:var(--danger)">加载失败</td></tr>';
+    }
+}
+
+async function toggleUserRole(userId, currentRole) {
+    const newRole = currentRole === 'admin' ? 'user' : 'admin';
+    try {
+        await api(`${API_BASE}/users/${userId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ role: newRole })
+        });
+        toast(`用户角色已更新为 ${newRole}`);
+        loadUsers();
+    } catch (e) {
+        toast('操作失败: ' + e.message, 'error');
+    }
+}
+
+async function toggleUserActive(userId, isActive) {
+    try {
+        await api(`${API_BASE}/users/${userId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ is_active: !isActive })
+        });
+        toast(isActive ? '用户已禁用' : '用户已启用');
+        loadUsers();
+    } catch (e) {
+        toast('操作失败: ' + e.message, 'error');
+    }
+}
+
+// ==================== Vocabulary ====================
+let vocabPage = 1;
+let vocabSearchTimer;
+
+function debounceVocabSearch() {
+    clearTimeout(vocabSearchTimer);
+    vocabSearchTimer = setTimeout(() => { vocabPage = 1; loadVocabulary(); }, 300);
+}
+
+async function loadVocabulary() {
+    const search = document.getElementById('vocab-search').value;
+    const tbody = document.getElementById('vocab-tbody');
+    tbody.innerHTML = '<tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr>';
+
+    try {
+        let url = `${API_BASE}/vocabulary/list?page=${vocabPage}&page_size=50`;
+        if (search) url += `&search=${encodeURIComponent(search)}`;
+        const data = await api(url);
+
+        if (data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无词条</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.items.map(v => `
+            <tr>
+                <td>${v.id}</td>
+                <td><strong>${esc(v.word)}</strong></td>
+                <td style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(v.meaning || '')}">${esc(v.meaning || '-')}</td>
+                <td>${esc(v.phonetic || '-')}</td>
+                <td><span class="badge ${v.added_from === 'ai_approved' ? 'badge-primary' : 'badge-gray'}">${v.added_from || 'manual'}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-outline" onclick="editVocabulary(${v.id})">编辑</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteVocabulary(${v.id}, '${esc(v.word)}')">删除</button>
+                </td>
+            </tr>
+        `).join('');
+
+        renderPagination('vocab-pagination', data, (p) => { vocabPage = p; loadVocabulary(); });
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state" style="color:var(--danger)">加载失败</td></tr>';
+    }
+}
+
+function showAddVocabModal() {
+    document.getElementById('vocab-modal-title').textContent = '添加词条';
+    document.getElementById('vocab-edit-id').value = '';
+    document.getElementById('vocab-word').value = '';
+    document.getElementById('vocab-meaning').value = '';
+    document.getElementById('vocab-phonetic').value = '';
+    document.getElementById('vocab-difficulty').value = '';
+    document.getElementById('vocab-examples').value = '';
+    document.getElementById('vocab-word').removeAttribute('readonly');
+    openModal('vocab-modal');
+}
+
+async function editVocabulary(id) {
+    try {
+        const item = await api(`${API_BASE}/vocabulary/${id}`);
+        document.getElementById('vocab-modal-title').textContent = '编辑词条';
+        document.getElementById('vocab-edit-id').value = id;
+        document.getElementById('vocab-word').value = item.word || '';
+        document.getElementById('vocab-meaning').value = item.meaning || '';
+        document.getElementById('vocab-phonetic').value = item.phonetic || '';
+        document.getElementById('vocab-difficulty').value = item.difficulty || '';
+        document.getElementById('vocab-examples').value = item.examples || '';
+        openModal('vocab-modal');
+    } catch (e) {
+        toast('加载词条失败', 'error');
+    }
+}
+
+async function saveVocabulary() {
+    const id = document.getElementById('vocab-edit-id').value;
+    const data = {
+        word: document.getElementById('vocab-word').value.trim(),
+        meaning: document.getElementById('vocab-meaning').value.trim(),
+        phonetic: document.getElementById('vocab-phonetic').value.trim(),
+        difficulty: document.getElementById('vocab-difficulty').value,
+        examples: document.getElementById('vocab-examples').value.trim(),
+    };
+
+    if (!data.word || !data.meaning) {
+        toast('单词和释义为必填项', 'error');
+        return;
+    }
+
+    try {
+        if (id) {
+            await api(`${API_BASE}/vocabulary/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+            toast('词条更新成功');
+        } else {
+            await api(`${API_BASE}/vocabulary`, { method: 'POST', body: JSON.stringify(data) });
+            toast('词条添加成功');
+        }
+        closeModal('vocab-modal');
+        loadVocabulary();
+    } catch (e) {
+        toast('保存失败: ' + e.message, 'error');
+    }
+}
+
+async function deleteVocabulary(id, word) {
+    if (!confirm(`确定要删除词条 "${word}" 吗？`)) return;
+    try {
+        await api(`${API_BASE}/vocabulary/${id}`, { method: 'DELETE' });
+        toast('词条已删除');
+        loadVocabulary();
+    } catch (e) {
+        toast('删除失败: ' + e.message, 'error');
+    }
+}
+
+// ==================== Import Tasks ====================
+let tasksPage = 1;
+let currentTaskId = null;
+
+async function loadImportTasks() {
+    const status = document.getElementById('task-status-filter').value;
+    const tbody = document.getElementById('tasks-tbody');
+    tbody.innerHTML = '<tr><td colspan="9" class="loading"><div class="spinner"></div></td></tr>';
+    document.getElementById('task-list-container').style.display = '';
+    document.getElementById('task-detail-container').style.display = 'none';
+
+    try {
+        let url = `${API_BASE}/import-tasks?page=${tasksPage}&page_size=20`;
+        if (status) url += `&status=${status}`;
+        const data = await api(url);
+
+        if (data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="empty-state">暂无导入任务</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.items.map(t => `
+            <tr>
+                <td style="font-family:monospace; font-size:12px;">${t.id.substring(0, 8)}...</td>
+                <td>${statusBadge(t.status)}</td>
+                <td>${t.total_words}</td>
+                <td style="color:var(--success)">${t.matched_count}</td>
+                <td style="color:var(--warning)">${t.ai_generated_count}</td>
+                <td style="color:var(--danger)">${t.ai_failed_count}</td>
+                <td style="color:var(--primary)">${t.approved_count}</td>
+                <td>${formatDate(t.created_at)}</td>
+                <td>
+                    <button class="btn btn-sm btn-primary" onclick="viewTaskDetail('${t.id}')">查看详情</button>
+                </td>
+            </tr>
+        `).join('');
+
+        renderPagination('tasks-pagination', data, (p) => { tasksPage = p; loadImportTasks(); });
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="9" class="empty-state" style="color:var(--danger)">加载失败</td></tr>';
+    }
+}
+
+async function viewTaskDetail(taskId) {
+    currentTaskId = taskId;
+    document.getElementById('task-list-container').style.display = 'none';
+    document.getElementById('task-detail-container').style.display = '';
+
+    try {
+        const data = await api(`${API_BASE}/import-tasks/${taskId}`);
+
+        // Update header info
+        document.getElementById('detail-task-status').textContent = data.status;
+        document.getElementById('detail-task-info').textContent =
+            `总词数: ${data.total_words} | 匹配: ${data.matched_count} | 生成: ${data.ai_generated_count} | 失败: ${data.ai_failed_count} | 已入库: ${data.approved_count}`;
+
+        // Progress
+        const processed = data.matched_count + data.ai_generated_count + data.ai_failed_count;
+        const progress = data.total_words > 0 ? Math.round((processed / data.total_words) * 100) : 0;
+        document.getElementById('detail-progress-text').textContent = `${progress}%`;
+        document.getElementById('detail-progress-bar').style.width = `${progress}%`;
+
+        // If processing, poll for updates
+        if (data.status === 'processing') {
+            startPolling(taskId);
+        }
+
+        // Matched items
+        document.getElementById('matched-count').textContent = (data.matched_items || []).length;
+        const matchedList = document.getElementById('matched-list');
+        if (data.matched_items && data.matched_items.length > 0) {
+            matchedList.innerHTML = data.matched_items.map(item => `
+                <div class="log-word-item">
+                    <div class="word-header">
+                        <span class="word-name">${esc(item.word_text)}</span>
+                        <span class="badge badge-success">已导入</span>
+                    </div>
+                    <div class="word-meaning">${esc(item.vocabulary_meaning || '')}</div>
+                </div>
+            `).join('');
+        } else {
+            matchedList.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>暂无匹配结果</p></div>';
+        }
+
+        // Generated items
+        document.getElementById('generated-count').textContent = (data.generated_items || []).length;
+        const generatedList = document.getElementById('generated-list');
+        if (data.generated_items && data.generated_items.length > 0) {
+            generatedList.innerHTML = data.generated_items.map(item => renderGeneratedItem(item)).join('');
+        } else {
+            generatedList.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>暂无生成结果</p></div>';
+        }
+
+        // Failed items
+        document.getElementById('failed-count').textContent = (data.failed_items || []).length;
+        const failedList = document.getElementById('failed-list');
+        if (data.failed_items && data.failed_items.length > 0) {
+            failedList.innerHTML = data.failed_items.map(item => `
+                <div class="log-word-item">
+                    <div class="word-header">
+                        <span class="word-name">${esc(item.word_text)}</span>
+                        <span class="badge badge-danger">失败</span>
+                    </div>
+                    <div class="word-meaning" style="color:var(--danger)">
+                        ${esc(item.generated_data?.error || '生成失败')}
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            failedList.innerHTML = '<div class="empty-state"><div class="icon">✨</div><p>没有失败项</p></div>';
+        }
+
+        // Hide failed panel if empty
+        document.getElementById('failed-panel').style.display =
+            (data.failed_items && data.failed_items.length > 0) ? '' : 'none';
+
+    } catch (e) {
+        toast('加载任务详情失败: ' + e.message, 'error');
+    }
+}
+
+function renderGeneratedItem(item) {
+    const data = item.generated_data || {};
+    const source = data.source === 'online_dictionary' ? '📖 在线词典' : '🤖 AI生成';
+    const isReviewed = ['approved', 'edited_approved', 'rejected'].includes(item.status);
+
+    let statusHtml = '';
+    if (item.status === 'approved') statusHtml = '<span class="badge badge-success">已入库</span>';
+    else if (item.status === 'edited_approved') statusHtml = '<span class="badge badge-success">编辑后入库</span>';
+    else if (item.status === 'rejected') statusHtml = '<span class="badge badge-danger">已拒绝</span>';
+    else statusHtml = '<span class="badge badge-warning">待审核</span>';
+
+    let actionsHtml = '';
+    if (!isReviewed) {
+        actionsHtml = `
+            <div class="word-actions">
+                <button class="btn btn-sm btn-success" onclick="approveItem('${item.id}')">✅ 审核入库</button>
+                <button class="btn btn-sm btn-warning" onclick="editGeneratedItem('${item.id}')">✏️ 编辑</button>
+                <button class="btn btn-sm btn-danger" onclick="rejectItem('${item.id}')">❌ 拒绝</button>
+            </div>
+        `;
+    }
+
+    // Build readable definitions
+    let defsHtml = '';
+    if (data.definitions && data.definitions.length > 0) {
+        defsHtml = data.definitions.map(d =>
+            `<div style="font-size:12px; color:var(--gray-500); margin-top:2px;">
+                [${d.pos || ''}] ${esc(d.definition || '')} ${d.definition_cn ? '/ ' + esc(d.definition_cn) : ''}
+            </div>`
+        ).join('');
+    }
+
+    return `
+        <div class="log-word-item" id="item-${item.id}">
+            <div class="word-header">
+                <span class="word-name">${esc(item.word_text)} ${data.phonetic ? '<span style="font-weight:normal; color:var(--gray-400); font-size:13px;">' + esc(data.phonetic) + '</span>' : ''}</span>
+                ${statusHtml}
+            </div>
+            <div class="word-meaning">${esc(data.meaning || item.vocabulary_meaning || '')}</div>
+            ${defsHtml}
+            <div class="word-meta">${source}</div>
+            ${actionsHtml}
+        </div>
+    `;
+}
+
+function backToTaskList() {
+    stopPolling();
+    currentTaskId = null;
+    document.getElementById('task-list-container').style.display = '';
+    document.getElementById('task-detail-container').style.display = 'none';
+    loadImportTasks();
+}
+
+// ==================== Approve / Reject / Edit ====================
+async function approveItem(itemId) {
+    try {
+        await api(`${API_BASE}/import-items/${itemId}/approve`, { method: 'POST', body: '{}' });
+        toast('已审核入库');
+        if (currentTaskId) viewTaskDetail(currentTaskId);
+    } catch (e) {
+        toast('操作失败: ' + e.message, 'error');
+    }
+}
+
+async function rejectItem(itemId) {
+    if (!confirm('确定要拒绝这个词条吗？')) return;
+    try {
+        await api(`${API_BASE}/import-items/${itemId}/reject`, { method: 'POST' });
+        toast('已拒绝');
+        if (currentTaskId) viewTaskDetail(currentTaskId);
+    } catch (e) {
+        toast('操作失败: ' + e.message, 'error');
+    }
+}
+
+// Store items data for editing
+let currentGeneratedItems = {};
+
+function editGeneratedItem(itemId) {
+    // Find item in current generated list by fetching from DOM context
+    // We need to fetch the item data
+    fetchAndEditItem(itemId);
+}
+
+async function fetchAndEditItem(itemId) {
+    try {
+        // We'll get the task detail which has all items
+        const data = await api(`${API_BASE}/import-tasks/${currentTaskId}`);
+        const allGenerated = data.generated_items || [];
+        const item = allGenerated.find(i => i.id === itemId);
+        if (!item) {
+            toast('未找到该项', 'error');
+            return;
+        }
+
+        const gd = item.generated_data || {};
+        document.getElementById('edit-item-id').value = itemId;
+        document.getElementById('edit-word').value = item.word_text;
+        document.getElementById('edit-meaning').value = gd.meaning || item.vocabulary_meaning || '';
+        document.getElementById('edit-phonetic').value = gd.phonetic || '';
+        document.getElementById('edit-definitions').value = gd.definitions ? JSON.stringify(gd.definitions, null, 2) : '';
+        document.getElementById('edit-examples').value = gd.examples ? JSON.stringify(gd.examples, null, 2) : '';
+        document.getElementById('edit-difficulty').value = gd.difficulty || '';
+
+        openModal('edit-generated-modal');
+    } catch (e) {
+        toast('加载失败: ' + e.message, 'error');
+    }
+}
+
+async function saveAndApproveEdited() {
+    const itemId = document.getElementById('edit-item-id').value;
+    const meaning = document.getElementById('edit-meaning').value.trim();
+    const phonetic = document.getElementById('edit-phonetic').value.trim();
+    const difficulty = document.getElementById('edit-difficulty').value;
+
+    if (!meaning) {
+        toast('释义不能为空', 'error');
+        return;
+    }
+
+    let definitions = [];
+    let examples = [];
+
+    try {
+        const defsText = document.getElementById('edit-definitions').value.trim();
+        if (defsText) definitions = JSON.parse(defsText);
+    } catch (e) {
+        toast('详细释义JSON格式错误', 'error');
+        return;
+    }
+
+    try {
+        const exText = document.getElementById('edit-examples').value.trim();
+        if (exText) examples = JSON.parse(exText);
+    } catch (e) {
+        toast('例句JSON格式错误', 'error');
+        return;
+    }
+
+    const editedData = {
+        word: document.getElementById('edit-word').value,
+        meaning,
+        phonetic,
+        definitions,
+        examples,
+        difficulty,
+        source: 'manual_edit',
+    };
+
+    try {
+        await api(`${API_BASE}/import-items/${itemId}/approve`, {
+            method: 'POST',
+            body: JSON.stringify({ generated_data: editedData })
+        });
+        toast('编辑并入库成功');
+        closeModal('edit-generated-modal');
+        if (currentTaskId) viewTaskDetail(currentTaskId);
+    } catch (e) {
+        toast('操作失败: ' + e.message, 'error');
+    }
+}
+
+async function approveAllGenerated() {
+    if (!confirm('确定要将所有待审核的生成内容全部入库吗？')) return;
+
+    try {
+        const data = await api(`${API_BASE}/import-tasks/${currentTaskId}`);
+        const pendingItems = (data.generated_items || []).filter(i => i.status === 'waiting_review');
+
+        if (pendingItems.length === 0) {
+            toast('没有待审核的项', 'info');
+            return;
+        }
+
+        let successCount = 0;
+        for (const item of pendingItems) {
+            try {
+                await api(`${API_BASE}/import-items/${item.id}/approve`, { method: 'POST', body: '{}' });
+                successCount++;
+            } catch (e) {
+                console.error(`入库失败: ${item.word_text}`, e);
+            }
+        }
+
+        toast(`已入库 ${successCount}/${pendingItems.length} 个词条`);
+        viewTaskDetail(currentTaskId);
+    } catch (e) {
+        toast('批量操作失败: ' + e.message, 'error');
+    }
+}
+
+// ==================== Polling ====================
+let pollInterval = null;
+
+function startPolling(taskId) {
+    stopPolling();
+    pollInterval = setInterval(async () => {
+        try {
+            const progress = await api(`${API_V1}/import-tasks/${taskId}/progress`);
+            document.getElementById('detail-progress-text').textContent = `${Math.round(progress.progress)}%`;
+            document.getElementById('detail-progress-bar').style.width = `${progress.progress}%`;
+            document.getElementById('detail-task-status').textContent = progress.status;
+
+            if (progress.status === 'completed' || progress.status === 'failed') {
+                stopPolling();
+                viewTaskDetail(taskId);  // Refresh full detail
+            }
+        } catch (e) {
+            console.error('Poll error:', e);
+        }
+    }, 3000);
+}
+
+function stopPolling() {
+    if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+    }
+}
+
+// ==================== Helpers ====================
+function esc(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) return '-';
+    const d = new Date(dateStr);
+    return d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function statusBadge(status) {
+    const map = {
+        'pending': ['等待处理', 'badge-gray'],
+        'processing': ['处理中', 'badge-warning'],
+        'completed': ['已完成', 'badge-success'],
+        'failed': ['失败', 'badge-danger'],
+    };
+    const [label, cls] = map[status] || [status, 'badge-gray'];
+    return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function renderPagination(containerId, data, onPageClick) {
+    const container = document.getElementById(containerId);
+    const totalPages = data.total_pages || Math.ceil(data.total / data.page_size);
+    const page = data.page;
+
+    if (totalPages <= 1) {
+        container.innerHTML = `<div class="pagination-info">共 ${data.total} 条</div><div></div>`;
+        return;
+    }
+
+    let buttons = '';
+    if (page > 1) buttons += `<button class="btn btn-sm btn-outline" data-page="${page-1}">上一页</button>`;
+    buttons += `<span style="padding:0 8px; font-size:13px; color:var(--gray-500);">第 ${page} / ${totalPages} 页</span>`;
+    if (page < totalPages) buttons += `<button class="btn btn-sm btn-outline" data-page="${page+1}">下一页</button>`;
+
+    container.innerHTML = `
+        <div class="pagination-info">共 ${data.total} 条</div>
+        <div class="pagination-buttons">${buttons}</div>
+    `;
+
+    container.querySelectorAll('button[data-page]').forEach(btn => {
+        btn.addEventListener('click', () => onPageClick(parseInt(btn.dataset.page)));
+    });
+}
+
+// ==================== Init ====================
+loadDashboard();
+</script>
+
+</body>
+</html>

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:percent_indicator/circular_percent_indicator.dart';
@@ -195,7 +196,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _showImportDialog(Map<String, dynamic> wb) {
     showDialog(
       context: context,
-      builder: (ctx) => _ImportDialog(
+      builder: (ctx) => _ImportDialogV2(
         wordbookId: wb['id'],
         wordbookName: wb['name'] ?? '',
         onImported: () {
@@ -239,7 +240,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ref.read(studyProvider.notifier).loadTodayTask(wordbookId);
                         await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const StudyScreen()));
-                        // ★ 学完回来刷新进度
                         debugPrint('[HOME] 📊 学习结束，刷新进度...');
                         ref.invalidate(progressProvider(wordbookId));
                         ref.read(studyProvider.notifier).loadTodayTask(wordbookId);
@@ -354,83 +354,164 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// 导入对话框
+// 新版导入对话框 V2（异步处理 + 进度轮询）
 // ════════════════════════════════════════════════════════════════════
 
-class _ImportDialog extends ConsumerStatefulWidget {
+class _ImportDialogV2 extends ConsumerStatefulWidget {
   final String wordbookId;
   final String wordbookName;
   final VoidCallback onImported;
 
-  const _ImportDialog({
+  const _ImportDialogV2({
     required this.wordbookId,
     required this.wordbookName,
     required this.onImported,
   });
 
   @override
-  ConsumerState<_ImportDialog> createState() => _ImportDialogState();
+  ConsumerState<_ImportDialogV2> createState() => _ImportDialogV2State();
 }
 
-class _ImportDialogState extends ConsumerState<_ImportDialog> {
+class _ImportDialogV2State extends ConsumerState<_ImportDialogV2> {
   final _textController = TextEditingController();
-  bool _isImporting = false;
-  String? _result;
-  String? _error;
+
+  // 状态: input -> submitting -> processing -> completed -> error
+  String _status = 'input';
+  String? _taskId;
+  String? _errorMessage;
+  Timer? _pollTimer;
+
+  // 进度数据
+  int _totalWords = 0;
+  int _matchedCount = 0;
+  int _aiGeneratedCount = 0;
+  int _aiFailedCount = 0;
+  double _progress = 0;
 
   @override
   void dispose() {
     _textController.dispose();
+    _pollTimer?.cancel();
     super.dispose();
   }
 
-  Future<void> _import() async {
+  /// 提交导入
+  Future<void> _submitImport() async {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
 
+    // 解析单词列表（按行分割）
+    final words = text
+        .split(RegExp(r'[\n,;，；]+'))
+        .map((w) => w.trim())
+        .where((w) => w.isNotEmpty)
+        .toList();
+
+    if (words.isEmpty) return;
+
     setState(() {
-      _isImporting = true;
-      _result = null;
-      _error = null;
+      _status = 'submitting';
+      _totalWords = words.length;
+      _errorMessage = null;
     });
 
     try {
       final api = ref.read(apiServiceProvider);
-      final result = await api.importWordsToWordbook(
-        wordbookId: widget.wordbookId,
-        textContent: text,
-      );
-      debugPrint('[IMPORT] ✅ 导入结果: $result');
+      final result = await api.importWordsV2(widget.wordbookId, words);
+      debugPrint('[IMPORT] ✅ 导入任务创建: $result');
 
       setState(() {
-        _isImporting = false;
-        _result = '导入完成！'
-            '\n匹配: ${result['found']} 个'
-            '\n新增: ${result['added']} 个'
-            '${(result['not_found_count'] ?? 0) > 0 ? '\n未找到: ${result['not_found_count']} 个' : ''}';
+        _taskId = result['task_id'];
+        _totalWords = result['total_words'] ?? words.length;
+        _status = 'processing';
       });
-      widget.onImported();
+
+      _startPolling();
     } catch (e) {
-      debugPrint('[IMPORT] ❌ 导入错误: $e');
+      debugPrint('[IMPORT] ❌ 提交失败: $e');
       setState(() {
-        _isImporting = false;
-        _error = '导入失败: $e';
+        _status = 'error';
+        _errorMessage = '$e';
       });
     }
+  }
+
+  /// 轮询进度
+  void _startPolling() {
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
+      if (_taskId == null) return;
+
+      try {
+        final api = ref.read(apiServiceProvider);
+        final progress = await api.getImportProgress(_taskId!);
+
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+
+        setState(() {
+          _matchedCount = progress['matched_count'] ?? 0;
+          _aiGeneratedCount = progress['ai_generated_count'] ?? 0;
+          _aiFailedCount = progress['ai_failed_count'] ?? 0;
+          _progress = (progress['progress'] as num?)?.toDouble() ?? 0;
+
+          final taskStatus = progress['status'] as String? ?? '';
+          if (taskStatus == 'completed' || taskStatus == 'failed') {
+            _status = 'completed';
+            timer.cancel();
+            widget.onImported();
+          }
+        });
+      } catch (e) {
+        debugPrint('[IMPORT] 轮询错误: $e');
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('导入单词到「${widget.wordbookName}」'),
+      title: Row(
+        children: [
+          Icon(
+            _status == 'completed' ? Icons.check_circle :
+            _status == 'error' ? Icons.error :
+            _status == 'processing' ? Icons.hourglass_top :
+            Icons.upload_file,
+            color: _status == 'completed' ? AppColors.success :
+                   _status == 'error' ? AppColors.error :
+                   AppColors.primary,
+            size: 24,
+          ),
+          const SizedBox(width: 10),
+          Text(
+            _status == 'input' ? '导入单词到「${widget.wordbookName}」' :
+            _status == 'submitting' ? '提交中...' :
+            _status == 'processing' ? '正在处理...' :
+            _status == 'completed' ? '导入完成' :
+            '导入失败',
+            style: const TextStyle(fontSize: 17),
+          ),
+        ],
+      ),
       content: SizedBox(
-        width: 400,
-        child: Column(
+        width: 420,
+        child: _buildContent(),
+      ),
+      actions: _buildActions(),
+    );
+  }
+
+  Widget _buildContent() {
+    switch (_status) {
+      case 'input':
+        return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '每行一个单词，支持直接粘贴：',
+              '每行一个单词，支持逗号/分号分隔：',
               style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 12),
@@ -438,7 +519,7 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
               controller: _textController,
               maxLines: 8,
               decoration: InputDecoration(
-                hintText: 'apple\nbanana\ncomfortable\n...',
+                hintText: 'apple\nbanana\ncomfortable\nabundant\n...',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -447,43 +528,206 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
               style: const TextStyle(fontSize: 14, fontFamily: 'monospace'),
             ),
             const SizedBox(height: 8),
-            const Text(
-              '提示：单词需要已存在于词典中才能匹配成功',
-              style: TextStyle(fontSize: 12, color: AppColors.textHint),
-            ),
-            if (_result != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.success.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(_result!,
-                  style: const TextStyle(fontSize: 13, color: AppColors.success)),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
               ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: AppColors.primary),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '词库已有的单词自动导入，没有的会通过在线词典和AI自动生成（需管理员审核后入库）',
+                      style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+
+      case 'submitting':
+        return const Padding(
+          padding: EdgeInsets.symmetric(vertical: 30),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('正在提交导入任务...'),
             ],
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(_error!,
-                style: const TextStyle(fontSize: 13, color: AppColors.error)),
+          ),
+        );
+
+      case 'processing':
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            // 进度条
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: _progress / 100,
+                minHeight: 10,
+                backgroundColor: Colors.grey[200],
+                valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text('${_progress.toStringAsFixed(0)}%',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 20),
+            // 统计
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildStatChip('总数', _totalWords, AppColors.textSecondary),
+                _buildStatChip('匹配', _matchedCount, AppColors.success),
+                _buildStatChip('生成', _aiGeneratedCount, AppColors.accent),
+                _buildStatChip('失败', _aiFailedCount, AppColors.error),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '后台正在处理中，请稍候...',
+              style: TextStyle(fontSize: 13, color: AppColors.textHint),
+            ),
+          ],
+        );
+
+      case 'completed':
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 统计摘要
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.success.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildStatChip('总数', _totalWords, AppColors.textSecondary),
+                  _buildStatChip('匹配', _matchedCount, AppColors.success),
+                  _buildStatChip('生成', _aiGeneratedCount, AppColors.accent),
+                  _buildStatChip('失败', _aiFailedCount, AppColors.error),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_matchedCount > 0)
+              _buildResultRow(Icons.check_circle, AppColors.success,
+                '$_matchedCount 个单词已从词库匹配并自动导入'),
+            if (_aiGeneratedCount > 0) ...[
+              const SizedBox(height: 8),
+              _buildResultRow(Icons.smart_toy, AppColors.accent,
+                '$_aiGeneratedCount 个单词由AI/词典生成，等待管理员在后台审核入库'),
+            ],
+            if (_aiFailedCount > 0) ...[
+              const SizedBox(height: 8),
+              _buildResultRow(Icons.warning_amber, AppColors.error,
+                '$_aiFailedCount 个单词生成失败'),
             ],
           ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('关闭'),
-        ),
-        ElevatedButton(
-          onPressed: _isImporting ? null : _import,
-          child: _isImporting
-              ? const SizedBox(width: 20, height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('导入'),
+        );
+
+      case 'error':
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: AppColors.error),
+              const SizedBox(height: 16),
+              Text('导入失败: ${_errorMessage ?? "未知错误"}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.error)),
+            ],
+          ),
+        );
+
+      default:
+        return const SizedBox();
+    }
+  }
+
+  Widget _buildResultRow(IconData icon, Color color, String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(text,
+            style: TextStyle(fontSize: 13, color: color, height: 1.4)),
         ),
       ],
     );
+  }
+
+  Widget _buildStatChip(String label, int value, Color color) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('$value',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: color)),
+        const SizedBox(height: 2),
+        Text(label,
+          style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+      ],
+    );
+  }
+
+  List<Widget> _buildActions() {
+    switch (_status) {
+      case 'input':
+        return [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          ElevatedButton.icon(
+            onPressed: _submitImport,
+            icon: const Icon(Icons.upload, size: 18),
+            label: const Text('导入'),
+          ),
+        ];
+      case 'submitting':
+        return []; // 提交中不显示按钮
+      case 'processing':
+        return [
+          TextButton(
+            onPressed: () {
+              _pollTimer?.cancel();
+              Navigator.pop(context);
+            },
+            child: const Text('后台继续处理'),
+          ),
+        ];
+      case 'completed':
+      case 'error':
+        return [
+          if (_status == 'error')
+            TextButton(
+              onPressed: () => setState(() => _status = 'input'),
+              child: const Text('重试'),
+            ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ];
+      default:
+        return [];
+    }
   }
 }

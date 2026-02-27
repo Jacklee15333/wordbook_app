@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # Ollama
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen2.5:14b"
+    ollama_model: str = "gpt-oss:20b"  # ← 改为你本地的模型
 
     # 有道 TTS
     youdao_app_key: str = ""

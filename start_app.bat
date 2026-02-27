@@ -1,28 +1,42 @@
 @echo off
+chcp 65001 >nul
 title WordBook App Launcher
 echo ============================================
-echo   WordBook App - 一键启动
+echo   WordBook App - Start
 echo ============================================
 echo.
 
-:: 启动后端 (新窗口)
-echo [1/2] 正在启动后端服务...
-start "WordBook Backend" cmd /k "cd /d D:\wordbook_app\backend && call venv\Scripts\activate && echo 后端启动中... && uvicorn app.main:app --reload --port 8000"
+:: ===== Kill any process on port 8000 =====
+echo [0/2] Checking port 8000...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8000 " ^| findstr "LISTENING"') do (
+    echo      Found process PID=%%a on port 8000, killing...
+    taskkill /F /PID %%a >nul 2>&1
+)
+:: Also kill any lingering uvicorn just in case
+taskkill /F /IM uvicorn.exe >nul 2>&1
+timeout /t 1 /nobreak >nul
+echo      Port 8000 is clear.
+echo.
 
-:: 等待后端启动
-echo 等待后端启动 (3秒)...
-timeout /t 3 /nobreak > nul
+:: ===== Start backend =====
+echo [1/2] Starting backend...
+start "WordBook Backend" cmd /k "chcp 65001 >nul && cd /d D:\wordbook_app\backend && call venv\Scripts\activate && echo Backend starting... && uvicorn app.main:app --reload --port 8000"
 
-:: 启动前端 (新窗口)
-echo [2/2] 正在启动前端...
-start "WordBook Frontend" cmd /k "cd /d D:\wordbook_app\frontend && echo 前端启动中... && flutter run -d chrome"
+echo      Waiting for backend (5 seconds)...
+timeout /t 5 /nobreak >nul
+
+:: ===== Start frontend =====
+echo [2/2] Starting frontend...
+start "WordBook Frontend" cmd /k "chcp 65001 >nul && cd /d D:\wordbook_app\frontend && echo Frontend starting... && flutter run -d chrome"
 
 echo.
 echo ============================================
-echo   全部启动完成！
-echo   后端: http://localhost:8000/docs
-echo   前端: 将在 Chrome 中自动打开
+echo   All started!
+echo   Backend: http://localhost:8000/docs
+echo   Admin:   http://localhost:8000/admin
+echo   Frontend: Chrome will open automatically
 echo ============================================
-echo.
-echo 按任意键关闭此窗口...
-pause > nul
+
+:: Auto-close this launcher window after 3 seconds
+timeout /t 3 /nobreak >nul
+exit

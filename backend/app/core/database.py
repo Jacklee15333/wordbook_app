@@ -16,6 +16,9 @@ engine = create_async_engine(
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+# 别名，供后台任务（import_processor）使用
+async_session_factory = async_session
+
 
 class Base(DeclarativeBase):
     pass

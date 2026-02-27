@@ -1,5 +1,7 @@
-"""词典 & 词书管理 API"""
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+"""词典 & 词书管理 API（含新版导入 V2）"""
+import uuid as uuid_mod
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, BackgroundTasks, Body
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
@@ -14,6 +16,8 @@ from app.schemas import (
     WordbookResponse, WordbookCreateRequest,
 )
 from app.services.ai_generator import generate_word_data
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["词典与词书"])
 
@@ -55,7 +59,6 @@ async def create_word(
     admin: User = Depends(get_admin_user),
 ):
     """管理员手动添加单词"""
-    # 检查是否已存在
     existing = await db.execute(
         select(Word).where(func.lower(Word.word) == req.word.lower())
     )
@@ -76,7 +79,7 @@ async def create_word(
         antonyms=req.antonyms or [],
         frequency_level=req.frequency_level,
         difficulty_level=req.difficulty_level,
-        is_reviewed=True,  # 管理员手动添加，直接标记已审核
+        is_reviewed=True,
         review_status="approved",
     )
     db.add(word)
@@ -91,7 +94,6 @@ async def ai_generate_word(
     admin: User = Depends(get_admin_user),
 ):
     """AI 生成单词词典数据（管理员触发）"""
-    # 检查是否已存在
     existing = await db.execute(
         select(Word).where(func.lower(Word.word) == word_text.lower())
     )
@@ -211,8 +213,7 @@ async def import_words_to_wordbook(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """导入单词到词书（txt/csv 格式）"""
-    # 验证词书归属
+    """导入单词到词书（txt/csv 格式）- 旧版"""
     wb_result = await db.execute(select(Wordbook).where(Wordbook.id == wordbook_id))
     wordbook = wb_result.scalar_one_or_none()
     if not wordbook:
@@ -220,18 +221,16 @@ async def import_words_to_wordbook(
     if not wordbook.is_builtin and wordbook.created_by != current_user.id:
         raise HTTPException(status_code=403, detail="无权操作此词书")
 
-    # 读取文件
     content = await file.read()
     text = content.decode("utf-8").strip()
     word_list = [line.strip().lower() for line in text.splitlines() if line.strip()]
-    word_list = list(dict.fromkeys(word_list))  # 去重保序
+    word_list = list(dict.fromkeys(word_list))
 
     found = 0
     not_found = []
     added = 0
 
     for word_text in word_list:
-        # 查找词典中是否已有
         result = await db.execute(
             select(Word).where(func.lower(Word.word) == word_text)
         )
@@ -243,7 +242,6 @@ async def import_words_to_wordbook(
 
         found += 1
 
-        # 检查是否已在词书中
         existing = await db.execute(
             select(WordbookWord).where(
                 and_(
@@ -260,7 +258,6 @@ async def import_words_to_wordbook(
             ))
             added += 1
 
-    # 更新词书词数
     count_result = await db.execute(
         select(func.count()).select_from(WordbookWord).where(
             WordbookWord.wordbook_id == wordbook_id
@@ -275,6 +272,138 @@ async def import_words_to_wordbook(
         "added": added,
         "not_found": not_found,
         "not_found_count": len(not_found),
+    }
+
+
+# ============================================================
+# ★★★ 新版导入 V2 — 异步处理 + 词库匹配 + AI生成 ★★★
+# ============================================================
+
+@router.post("/wordbooks/{wordbook_id}/import-v2")
+async def import_words_v2(
+    wordbook_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    data: dict = Body(...),
+):
+    """
+    新版导入接口（异步处理）
+    Body: {"words": ["apple", "banana", ...]}
+    """
+    logger.info(f"=== import-v2 called === wordbook_id={wordbook_id}, user={current_user.id}")
+
+    # 懒加载重依赖，避免模块级导入失败
+    try:
+        from app.core.database import async_session_factory
+        from app.core.config import get_settings
+        from app.models.import_task import ImportTask
+        from app.services.import_processor import ImportProcessor
+    except Exception as e:
+        logger.error(f"import-v2 lazy import failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"服务依赖加载失败: {str(e)}")
+
+    settings = get_settings()
+
+    words = data.get("words", [])
+    if not words or not isinstance(words, list):
+        raise HTTPException(status_code=400, detail="请提供 words 列表")
+
+    result = await db.execute(select(Wordbook).where(Wordbook.id == wordbook_id))
+    wordbook = result.scalars().first()
+    if not wordbook:
+        raise HTTPException(status_code=404, detail="词书不存在")
+
+    word_list = list(dict.fromkeys([w.strip() for w in words if isinstance(w, str) and w.strip()]))
+    if not word_list:
+        raise HTTPException(status_code=400, detail="单词列表为空")
+
+    logger.info(f"Creating import task: {len(word_list)} words")
+
+    task_id = uuid_mod.uuid4()
+    task = ImportTask(
+        id=task_id,
+        user_id=current_user.id,
+        wordbook_id=wordbook_id,
+        total_words=len(word_list),
+        status="pending",
+    )
+    db.add(task)
+    await db.commit()
+
+    logger.info(f"Task created: {task_id}")
+
+    processor = ImportProcessor(
+        db_session_factory=async_session_factory,
+        ollama_base_url=settings.ollama_base_url,
+        ollama_model=settings.ollama_model,
+    )
+    background_tasks.add_task(processor.process_import, str(task_id), word_list)
+
+    return {
+        "task_id": str(task_id),
+        "message": f"导入任务已创建，共 {len(word_list)} 个单词正在后台处理",
+        "total_words": len(word_list),
+    }
+
+
+@router.get("/import-tasks/{task_id}/progress")
+async def get_task_progress(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取导入任务进度"""
+    from app.models.import_task import ImportTask
+
+    result = await db.execute(select(ImportTask).where(ImportTask.id == task_id))
+    task = result.scalars().first()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    processed = task.matched_count + task.ai_generated_count + task.ai_failed_count
+    progress = (processed / max(task.total_words, 1)) * 100
+
+    return {
+        "id": str(task.id),
+        "status": task.status,
+        "total_words": task.total_words,
+        "matched_count": task.matched_count,
+        "ai_generated_count": task.ai_generated_count,
+        "ai_failed_count": task.ai_failed_count,
+        "approved_count": task.approved_count,
+        "progress": round(progress, 1),
+        "error_message": task.error_message,
+    }
+
+
+@router.get("/import-tasks/{task_id}/results")
+async def get_task_results(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取导入任务的最终结果"""
+    from app.models.import_task import ImportTask, ImportItem
+
+    result = await db.execute(select(ImportTask).where(ImportTask.id == task_id))
+    task = result.scalars().first()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    items_result = await db.execute(
+        select(ImportItem).where(ImportItem.task_id == task_id)
+        .order_by(ImportItem.match_type, ImportItem.word_text)
+    )
+    items = items_result.scalars().all()
+
+    return {
+        "task": task.to_dict(),
+        "matched": [i.to_dict() for i in items if i.match_type == "exact_match"],
+        "generated": [i.to_dict() for i in items if i.match_type in ("ai_generated", "dict_generated")],
+        "failed": [i.to_dict() for i in items if i.match_type == "ai_failed"],
     }
 
 
