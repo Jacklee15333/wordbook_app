@@ -45,6 +45,20 @@ class ApiService {
     return r.data;
   }
 
+  /// ★ v3.4: 创建新词书
+  Future<Map<String, dynamic>> createWordbook({
+    required String name,
+    String? description,
+    String? difficulty,
+  }) async {
+    final r = await _dio.post('/wordbooks', data: {
+      'name': name,
+      if (description != null) 'description': description,
+      if (difficulty != null) 'difficulty': difficulty,
+    });
+    return r.data;
+  }
+
   Future<List<dynamic>> getWordbookWords(String wordbookId, {int page = 1, int pageSize = 50}) async {
     final r = await _dio.get('/wordbooks/$wordbookId/words', queryParameters: {
       'page': page,

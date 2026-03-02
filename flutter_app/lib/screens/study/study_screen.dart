@@ -1,3 +1,8 @@
+// ╔═══════════════════════════════════════════════════════════════════════╗
+// ║  study_screen.dart  v3.2  2026-03-02                                ║
+// ║  v3.2: 拼写改为音节块拼接                                            ║
+// ╚═══════════════════════════════════════════════════════════════════════╝
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme.dart';
@@ -11,7 +16,6 @@ class StudyScreen extends ConsumerStatefulWidget {
 }
 
 class _StudyScreenState extends ConsumerState<StudyScreen> {
-  // 拼写题状态
   List<String> _selectedLetters = [];
   List<bool> _letterUsed = [];
   int? _selectedOptionIndex;
@@ -54,29 +58,22 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 题目视图（根据步骤分发）
+  // 题目视图
   // ═══════════════════════════════════════════════════════════════════════
 
   Widget _buildQuestionView(StudyState study) {
     final question = study.currentQuestion!;
-
     return Column(
       children: [
-        // 步骤指示器
         _buildStepIndicator(question.step),
-
-        // 题目区域
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Column(
               children: [
                 const SizedBox(height: 16),
-                // 题干
                 _buildQuestionCard(question),
                 const SizedBox(height: 24),
-
-                // 选项区域（选择题）或 拼写区域
                 if (question.step == TestStep.spelling)
                   _buildSpellingArea(question, study)
                 else
@@ -85,8 +82,6 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
             ),
           ),
         ),
-
-        // 底部：结果反馈 + 下一题按钮
         if (study.isShowingResult) _buildResultFooter(study),
       ],
     );
@@ -114,7 +109,6 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   Widget _buildStepChip(String label, TestStep thisStep, TestStep currentStep) {
     final isActive = thisStep == currentStep;
     final isPast = thisStep.index < currentStep.index;
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
@@ -165,7 +159,6 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
         padding: const EdgeInsets.all(28),
         child: Column(
           children: [
-            // 提示文字
             Text(
               isEnToCn
                   ? '请选择该单词的中文释义'
@@ -179,10 +172,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
               ),
             ),
             const SizedBox(height: 16),
-
-            // 主题干
             if (isEnToCn || isSpelling) ...[
-              // 显示英文单词
               Text(
                 isSpelling ? question.meaning : question.word,
                 style: TextStyle(
@@ -203,22 +193,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                   ),
                 ),
               ],
-              if (isSpelling) ...[
-                const SizedBox(height: 16),
-                // 拼写提示
-                Text(
-                  question.spellingHint ?? '',
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primary,
-                    letterSpacing: 4,
-                    fontFamily: 'monospace',
-                  ),
-                ),
-              ],
             ] else ...[
-              // 汉选英：显示中文
               Text(
                 question.meaning,
                 style: const TextStyle(
@@ -236,7 +211,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 选择题选项
+  // ★ v3.0: 选择题选项 — 答题后公布每个选项的完整答案
   // ═══════════════════════════════════════════════════════════════════════
 
   Widget _buildChoiceOptions(TestQuestion question, StudyState study) {
@@ -254,19 +229,16 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
 
         if (isShowingResult) {
           if (isCorrect) {
-            // 正确答案始终高亮绿色（不管用户是否选了它）
             bgColor = AppColors.success.withOpacity(0.1);
             borderColor = AppColors.success;
             textColor = AppColors.success;
             icon = Icons.check_circle_rounded;
           } else if (isSelected && !isCorrect) {
-            // 用户选错的选项标红
             bgColor = AppColors.error.withOpacity(0.1);
             borderColor = AppColors.error;
             textColor = AppColors.error;
             icon = Icons.cancel_rounded;
           } else {
-            // 其他未选中的错误选项变灰
             textColor = AppColors.textHint;
           }
         } else if (isSelected) {
@@ -286,15 +258,15 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                   : () => _onOptionTap(index),
               child: Container(
                 width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: borderColor, width: 1.5),
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 序号
+                    // 序号/图标
                     Container(
                       width: 28,
                       height: 28,
@@ -310,7 +282,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                         child: icon != null
                             ? Icon(icon, size: 18, color: textColor)
                             : Text(
-                                String.fromCharCode(65 + index), // A, B, C, D
+                                String.fromCharCode(65 + index),
                                 style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,
@@ -320,14 +292,35 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
+                    // ★ v3.0: 选项内容 — 答题后显示完整答案
                     Expanded(
-                      child: Text(
-                        option.text,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: textColor,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            option.text,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: textColor,
+                            ),
+                          ),
+                          // ★ 答题后显示附加信息（英文单词或中文释义）
+                          if (isShowingResult && option.subText != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              option.subText!,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: isCorrect
+                                    ? AppColors.success.withOpacity(0.8)
+                                    : isSelected && !isCorrect
+                                        ? AppColors.error.withOpacity(0.7)
+                                        : AppColors.textHint,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   ],
@@ -345,8 +338,6 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
       _selectedOptionIndex = index;
       _isAnimating = true;
     });
-
-    // 短暂延迟后自动提交
     Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) {
         ref.read(studyProvider.notifier).submitChoiceAnswer(index);
@@ -358,114 +349,117 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 拼写区域
+  // ★ v3.2: 拼写区域 — 音节块拼接（类似截图效果）
   // ═══════════════════════════════════════════════════════════════════════
 
   Widget _buildSpellingArea(TestQuestion question, StudyState study) {
-    // 初始化字母使用状态
-    if (_letterUsed.length != question.scrambledLetters.length) {
-      _letterUsed =
-          List.generate(question.scrambledLetters.length, (_) => false);
+    // scrambledLetters 现在存的是打乱的音节块
+    final chunks = question.scrambledLetters;
+    // spellingHint 存的是正确顺序（用|分隔）
+    final correctChunks = question.spellingHint?.split('|') ?? [];
+
+    if (_letterUsed.length != chunks.length) {
+      _letterUsed = List.generate(chunks.length, (_) => false);
       _selectedLetters = [];
     }
 
     return Column(
       children: [
-        // 已选字母显示区（输入框效果）
-        Container(
-          width: double.infinity,
-          constraints: const BoxConstraints(minHeight: 56),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: study.isShowingResult
-                  ? (study.lastResult?.isCorrect == true
-                      ? AppColors.success
-                      : AppColors.error)
-                  : AppColors.primary.withOpacity(0.5),
-              width: 2,
-            ),
-          ),
-          child: Wrap(
-            spacing: 4,
-            runSpacing: 4,
-            children: [
-              for (int i = 0; i < _selectedLetters.length; i++)
-                GestureDetector(
-                  onTap: study.isShowingResult
-                      ? null
-                      : () => _removeLetterAt(i, question),
-                  child: Container(
-                    width: 36,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: study.isShowingResult
-                          ? (study.lastResult?.isCorrect == true
-                              ? AppColors.success.withOpacity(0.15)
-                              : AppColors.error.withOpacity(0.15))
-                          : AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Center(
-                      child: Text(
-                        _selectedLetters[i],
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: study.isShowingResult
-                              ? (study.lastResult?.isCorrect == true
-                                  ? AppColors.success
-                                  : AppColors.error)
-                              : AppColors.primary,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              // 光标占位
-              if (!study.isShowingResult && _selectedLetters.length < question.word.length)
-                Container(
-                  width: 36,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: AppColors.primary.withOpacity(0.5),
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 8),
 
-        // 可选字母
+        // ★ 顶部：已选块 / 空位槽
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          alignment: WrapAlignment.center,
+          children: List.generate(correctChunks.length, (slotIdx) {
+            final bool isFilled = slotIdx < _selectedLetters.length;
+            final String? chunk = isFilled ? _selectedLetters[slotIdx] : null;
+
+            // 判断对错（结果显示时）
+            final bool showResult = study.isShowingResult;
+            final bool isCorrectChunk = showResult &&
+                chunk != null &&
+                slotIdx < correctChunks.length &&
+                chunk == correctChunks[slotIdx];
+
+            return GestureDetector(
+              onTap: (showResult || !isFilled)
+                  ? null
+                  : () => _removeChunkAt(slotIdx, chunks),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                constraints: const BoxConstraints(minWidth: 60),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: showResult
+                      ? (study.lastResult?.isCorrect == true
+                          ? AppColors.success.withOpacity(0.12)
+                          : isCorrectChunk
+                              ? AppColors.success.withOpacity(0.12)
+                              : AppColors.error.withOpacity(0.12))
+                      : isFilled
+                          ? AppColors.primary.withOpacity(0.1)
+                          : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: showResult
+                          ? (study.lastResult?.isCorrect == true
+                              ? AppColors.success
+                              : AppColors.error)
+                          : isFilled
+                              ? AppColors.primary
+                              : AppColors.textHint.withOpacity(0.4),
+                      width: 3,
+                    ),
+                  ),
+                ),
+                child: Text(
+                  isFilled ? chunk! : '      ',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: showResult
+                        ? (study.lastResult?.isCorrect == true
+                            ? AppColors.success
+                            : AppColors.error)
+                        : AppColors.primary,
+                    letterSpacing: 1,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }),
+        ),
+
+        const SizedBox(height: 32),
+
+        // ★ 底部：可选的音节块按钮
         if (!study.isShowingResult)
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 14,
+            runSpacing: 14,
             alignment: WrapAlignment.center,
-            children: List.generate(question.scrambledLetters.length, (index) {
-              final letter = question.scrambledLetters[index];
+            children: List.generate(chunks.length, (index) {
+              final chunk = chunks[index];
               final isUsed = _letterUsed[index];
 
               return GestureDetector(
-                onTap: isUsed ? null : () => _selectLetter(index, question),
+                onTap: isUsed ? null : () => _selectChunk(index, chunks),
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 200),
-                  opacity: isUsed ? 0.3 : 1.0,
+                  opacity: isUsed ? 0.25 : 1.0,
                   child: Container(
-                    width: 44,
-                    height: 48,
+                    constraints: const BoxConstraints(minWidth: 64),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 14),
                     decoration: BoxDecoration(
                       color: isUsed
-                          ? AppColors.divider
+                          ? AppColors.divider.withOpacity(0.5)
                           : AppColors.surface,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: isUsed
                             ? AppColors.divider
@@ -476,23 +470,23 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                           ? null
                           : [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.06),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
+                                color: Colors.black.withOpacity(0.08),
+                                blurRadius: 6,
+                                offset: const Offset(0, 3),
                               ),
                             ],
                     ),
-                    child: Center(
-                      child: Text(
-                        letter.toLowerCase(),
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: isUsed
-                              ? AppColors.textHint
-                              : AppColors.textPrimary,
-                        ),
+                    child: Text(
+                      chunk,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: isUsed
+                            ? AppColors.textHint
+                            : AppColors.textPrimary,
+                        letterSpacing: 1,
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),
@@ -500,71 +494,57 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
             }),
           ),
 
-        const SizedBox(height: 16),
-
-        // 操作按钮
-        if (!study.isShowingResult)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // 退格按钮
-              OutlinedButton.icon(
-                onPressed: _selectedLetters.isEmpty
-                    ? null
-                    : () => _removeLastLetter(question),
-                icon: const Icon(Icons.backspace_outlined, size: 18),
-                label: const Text('退格'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.textSecondary,
-                ),
+        // ★ 结果显示时如果答错，显示正确答案
+        if (study.isShowingResult &&
+            study.lastResult?.isCorrect == false) ...[
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.success.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '正确拼写：${question.word}',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.success,
+                letterSpacing: 1,
               ),
-              const SizedBox(width: 12),
-              // 清空按钮
-              OutlinedButton.icon(
-                onPressed: _selectedLetters.isEmpty
-                    ? null
-                    : () => _clearLetters(question),
-                icon: const Icon(Icons.clear_all, size: 18),
-                label: const Text('清空'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(width: 12),
-              // 提交按钮
-              ElevatedButton.icon(
-                onPressed: _selectedLetters.isEmpty
-                    ? null
-                    : () {
-                        final answer = _selectedLetters.join();
-                        ref
-                            .read(studyProvider.notifier)
-                            .submitSpellingAnswer(answer);
-                      },
-                icon: const Icon(Icons.check, size: 18),
-                label: const Text('确认'),
-              ),
-            ],
+            ),
           ),
+        ],
       ],
     );
   }
 
-  void _selectLetter(int index, TestQuestion question) {
+  void _selectChunk(int index, List<String> chunks) {
+    final correctChunks =
+        ref.read(studyProvider).currentQuestion?.spellingHint?.split('|') ?? [];
     setState(() {
-      _selectedLetters.add(question.scrambledLetters[index]);
+      _selectedLetters.add(chunks[index]);
       _letterUsed[index] = true;
     });
+
+    // 如果全部块都已选择，自动提交
+    if (_selectedLetters.length == correctChunks.length) {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          final answer = _selectedLetters.join();
+          ref.read(studyProvider.notifier).submitSpellingAnswer(answer);
+        }
+      });
+    }
   }
 
-  void _removeLetterAt(int selectedIdx, TestQuestion question) {
-    final letter = _selectedLetters[selectedIdx];
+  void _removeChunkAt(int selectedIdx, List<String> chunks) {
+    final chunk = _selectedLetters[selectedIdx];
     setState(() {
       _selectedLetters.removeAt(selectedIdx);
-      // 找到第一个匹配的已使用字母并恢复
-      for (int i = 0; i < question.scrambledLetters.length; i++) {
-        if (_letterUsed[i] &&
-            question.scrambledLetters[i] == letter) {
+      // 找到对应的原始块并恢复
+      for (int i = 0; i < chunks.length; i++) {
+        if (_letterUsed[i] && chunks[i] == chunk) {
           _letterUsed[i] = false;
           break;
         }
@@ -572,22 +552,8 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     });
   }
 
-  void _removeLastLetter(TestQuestion question) {
-    if (_selectedLetters.isNotEmpty) {
-      _removeLetterAt(_selectedLetters.length - 1, question);
-    }
-  }
-
-  void _clearLetters(TestQuestion question) {
-    setState(() {
-      _selectedLetters = [];
-      _letterUsed =
-          List.generate(question.scrambledLetters.length, (_) => false);
-    });
-  }
-
   // ═══════════════════════════════════════════════════════════════════════
-  // 结果反馈 + 下一题按钮
+  // 结果反馈
   // ═══════════════════════════════════════════════════════════════════════
 
   Widget _buildResultFooter(StudyState study) {

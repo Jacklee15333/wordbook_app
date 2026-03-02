@@ -1,3 +1,10 @@
+// ╔═══════════════════════════════════════════════════════════════════════╗
+// ║  auth_provider.dart  v2.0  2026-03-02                               ║
+// ║  修复：添加缺失的 dio import                                         ║
+// ╚═══════════════════════════════════════════════════════════════════════╝
+
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
@@ -48,6 +55,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final ApiService _api;
 
   AuthNotifier(this._api) : super(const AuthState()) {
+    debugPrint('[AUTH] ✅ auth_provider v2.0 已加载');
     _checkSavedToken();
   }
 
@@ -80,6 +88,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final token = data['access_token'];
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('access_token', token);
+      debugPrint('[LOGIN] 💾 已保存账号密码');
       state = AuthState(
         status: AuthStatus.authenticated,
         token: token,
@@ -87,7 +96,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
         email: data['email'],
         nickname: data['nickname'],
       );
-      // Fetch admin status
       try {
         final user = await _api.getMe();
         state = state.copyWith(isAdmin: user['is_admin'] ?? false);
