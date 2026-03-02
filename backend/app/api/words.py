@@ -163,7 +163,19 @@ async def list_wordbooks(
         )
         .order_by(Wordbook.sort_order)
     )
-    return result.scalars().all()
+    wordbooks = result.scalars().all()
+
+    # ★★★ 关键修复：每次获取词书列表时，从 wordbook_words 表重新统计真实数量 ★★★
+    for wb in wordbooks:
+        actual_count = await db.scalar(
+            select(func.count()).select_from(WordbookWord).where(
+                WordbookWord.wordbook_id == wb.id
+            )
+        )
+        if wb.word_count != (actual_count or 0):
+            wb.word_count = actual_count or 0
+
+    return wordbooks
 
 
 @router.get("/wordbooks/{wordbook_id}/words", response_model=list[WordResponse])

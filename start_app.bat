@@ -25,6 +25,10 @@ start "WordBook Backend" cmd /k "chcp 65001 >nul && cd /d D:\wordbook_app\backen
 echo      Waiting for backend (5 seconds)...
 timeout /t 5 /nobreak >nul
 
+:: ===== Open admin page in browser =====
+echo      Opening admin dashboard...
+start "" "http://localhost:8000/admin"
+
 :: ===== Start frontend =====
 echo [2/2] Starting frontend...
 start "WordBook Frontend" cmd /k "chcp 65001 >nul && cd /d D:\wordbook_app\frontend && echo Frontend starting... && flutter run -d chrome"
@@ -32,9 +36,9 @@ start "WordBook Frontend" cmd /k "chcp 65001 >nul && cd /d D:\wordbook_app\front
 echo.
 echo ============================================
 echo   All started!
-echo   Backend: http://localhost:8000/docs
-echo   Admin:   http://localhost:8000/admin
-echo   Frontend: Chrome will open automatically
+echo   Backend API: http://localhost:8000/docs
+echo   Admin Panel: http://localhost:8000/admin
+echo   Frontend:    Chrome will open automatically
 echo ============================================
 
 :: Auto-close this launcher window after 3 seconds

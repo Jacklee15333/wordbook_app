@@ -16,7 +16,7 @@ from sqlalchemy import select, update, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.import_task import ImportTask, ImportItem
-from app.models.word import Word, WordbookWord
+from app.models.word import Word, Wordbook, WordbookWord
 from app.services.vocabulary_service import get_vocabulary_service
 from app.services.word_generator_service import WordGeneratorService
 
@@ -114,6 +114,22 @@ class ImportProcessor:
                         updated_at=datetime.utcnow()
                     )
                 )
+
+                # ★★★ 关键修复：更新词书的 word_count ★★★
+                if wordbook_id:
+                    actual_count = await session.scalar(
+                        select(func.count(WordbookWord.id)).where(
+                            WordbookWord.wordbook_id == wordbook_id
+                        )
+                    )
+                    await session.execute(
+                        update(Wordbook).where(Wordbook.id == wordbook_id).values(
+                            word_count=actual_count or 0,
+                            updated_at=datetime.utcnow()
+                        )
+                    )
+                    logger.info(f"★ 词书 {wordbook_id} word_count 已更新为 {actual_count}")
+
                 await session.commit()
 
                 logger.info(
