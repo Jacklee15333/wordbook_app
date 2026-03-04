@@ -27,9 +27,9 @@ class WordBookApp extends ConsumerWidget {
   Widget _buildHome(AuthState auth) {
     switch (auth.status) {
       case AuthStatus.unknown:
-        return const Scaffold(
-          body: Center(child: CircularProgressIndicator()),
-        );
+        // ★ 直接显示登录页，避免闪白屏/loading
+        // 如果 token 有效会自动跳转到 HomeScreen
+        return const LoginScreen();
       case AuthStatus.authenticated:
         return const HomeScreen();
       case AuthStatus.unauthenticated:
