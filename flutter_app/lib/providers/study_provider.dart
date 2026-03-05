@@ -1,6 +1,6 @@
 // ╔═══════════════════════════════════════════════════════════════════════╗
-// ║  study_provider.dart  v3.4  2026-03-02                              ║
-// ║  v3.4: 干扰项类型匹配（单词配单词，短语配短语）                      ║
+// ║  study_provider.dart  v3.6  2026-03-04                              ║
+// ║  v3.6: 三类干扰项匹配（单词/短语/词缀）+ definitions多格式兼容      ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
 
 import 'dart:math';
@@ -9,10 +9,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/api_service.dart';
 
-const String _kVersion = '📦 study_provider v3.3 (2026-03-02)';
+const String _kVersion = '📦 study_provider v3.6 (2026-03-04) 三类干扰项匹配';
 
 void _log(String msg) {
-  debugPrint('[STUDY-v3.3] $msg');
+  debugPrint('[STUDY] $msg');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -431,7 +431,9 @@ class StudyNotifier extends StateNotifier<StudyState> {
   ];
 
   StudyNotifier(this._api) : super(const StudyState()) {
-    _log('✅ $_kVersion  已加载');
+    _log('═══════════════════════════════════════════');
+    _log('★★★ $_kVersion ★★★');
+    _log('═══════════════════════════════════════════');
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -588,15 +590,86 @@ class StudyNotifier extends StateNotifier<StudyState> {
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // ★ v3.5: 超强兼容的释义提取 — 支持三种数据库格式
+  // 格式1 (vocabulary.db导入): {"pos": "",     "meaning": "n. 桌子"}
+  // 格式2 (在线词典):          {"pos": "noun", "definition": "...", "definition_cn": ""}
+  // 格式3 (AI生成/已修复):     {"pos": "n.",   "cn": "桌子"}
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// 词性全称转缩写
+  static const Map<String, String> _posFullToAbbr = {
+    'noun': 'n.', 'verb': 'v.', 'adjective': 'adj.', 'adverb': 'adv.',
+    'preposition': 'prep.', 'conjunction': 'conj.', 'pronoun': 'pron.',
+    'interjection': 'interj.', 'determiner': 'det.', 'exclamation': 'interj.',
+  };
+
+  /// 词性缩写正则 (n. / v. / adj. / adv. / ...)
+  static final RegExp _posAbbrRe = RegExp(
+    r'^(n\.|v\.|vt\.|vi\.|adj\.|adv\.|prep\.|conj\.|pron\.|int\.|interj\.|aux\.|art\.|num\.|det\.|abbr\.|pl\.)\s*',
+  );
+
+  /// 标准化词性为缩写形式
+  String _normalizePos(String raw) {
+    if (raw.isEmpty) return '';
+    final trimmed = raw.trim().toLowerCase();
+    // 已是缩写 (如 "n." / "adj.")
+    if (_posAbbrRe.hasMatch('$trimmed ')) return trimmed;
+    // 全称 (如 "noun" / "adjective")
+    return _posFullToAbbr[trimmed] ?? '';
+  }
+
   String _extractMeaning(Map<String, dynamic> word) {
     final definitions = word['definitions'] as List? ?? [];
     if (definitions.isEmpty) return '';
     final parts = <String>[];
+    // ★ 短语和词缀不显示词性前缀，只有单个单词才显示
+    final wordText = word['word'] as String? ?? '';
+    final showPos = _getWordType(wordText) == 'word';
+
     for (final def in definitions.take(2)) {
-      final pos = def['pos'] as String? ?? '';
-      final cn = def['cn'] as String? ?? '';
-      if (cn.isNotEmpty) {
-        parts.add(pos.isNotEmpty ? '$pos $cn' : cn);
+      String pos = (def['pos'] as String? ?? '').trim();
+      String cn = '';
+
+      // ★ 按优先级尝试获取中文释义
+      // 优先级: cn > meaning > definition_cn
+      final cnField = (def['cn'] as String? ?? '').trim();
+      final meaningField = (def['meaning'] as String? ?? '').trim();
+      final defCnField = (def['definition_cn'] as String? ?? '').trim();
+
+      if (cnField.isNotEmpty && _containsChinese(cnField)) {
+        cn = cnField;
+      } else if (meaningField.isNotEmpty && _containsChinese(meaningField)) {
+        cn = meaningField;
+      } else if (defCnField.isNotEmpty && _containsChinese(defCnField)) {
+        cn = defCnField;
+      }
+
+      if (cn.isEmpty) continue;
+
+      // ★ 标准化词性
+      String normalizedPos = showPos ? _normalizePos(pos) : '';
+
+      // ★ 如果 pos 为空且是单词，尝试从 cn 文本中解析嵌入的词性前缀
+      if (normalizedPos.isEmpty && showPos) {
+        final posMatch = _posAbbrRe.firstMatch(cn);
+        if (posMatch != null) {
+          normalizedPos = posMatch.group(1)!;
+          cn = cn.substring(posMatch.end).trim();
+        }
+      } else if (!showPos) {
+        // 短语/词缀：如果 cn 里嵌有词性前缀，去掉它
+        final posMatch = _posAbbrRe.firstMatch(cn);
+        if (posMatch != null) {
+          cn = cn.substring(posMatch.end).trim();
+        }
+      }
+
+      // 拼接最终结果: "n. 桌子"（单词）或 "桌子"（短语/词缀）
+      if (normalizedPos.isNotEmpty && cn.isNotEmpty) {
+        parts.add('$normalizedPos $cn');
+      } else if (cn.isNotEmpty) {
+        parts.add(cn);
       }
     }
     return parts.isNotEmpty ? parts.join('；') : '';
@@ -643,13 +716,16 @@ class StudyNotifier extends StateNotifier<StudyState> {
   TestQuestion _buildEnToCnQuestion(
       String wordId, String wordText, String meaning, String? phonetic) {
     meaning = _ensureValidMeaning(wordText, meaning);
+    final wordType = _getWordType(wordText);
+    _log('🔤 英选汉出题: "$wordText" type=$wordType meaning="$meaning"');
 
     final options = <ChoiceOption>[
       ChoiceOption(text: meaning, subText: wordText, isCorrect: true),
     ];
 
-    final distractors = _getChineseDistractorsWithWord(wordId, meaning, 3);
+    final distractors = _getChineseDistractorsWithWord(wordId, wordText, meaning, 3);
     options.addAll(distractors);
+    _log('🔤 英选汉选项: ${options.map((o) => "${o.subText}=${o.text}").toList()}');
 
     options.shuffle(_random);
     final correctIdx = options.indexWhere((o) => o.isCorrect);
@@ -827,20 +903,130 @@ class StudyNotifier extends StateNotifier<StudyState> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // ★ v3.4: 干扰项生成 — 类型匹配（单词配单词，短语配短语）
+  // ★ v3.5: 干扰项生成 — 三类匹配（单词/短语/词缀）
   // ═══════════════════════════════════════════════════════════════════════
 
-  /// 判断是否是短语（含空格）
+  /// 判断是否是短语（含空格，但排除词缀）
   bool _isPhrase(String text) {
-    return text.trim().contains(' ');
+    final t = text.trim();
+    if (_isAffix(t)) return false;
+    return t.contains(' ');
+  }
+
+  /// 判断是否是词根词缀（以 - 开头或结尾，如 dis- / -tion / -able）
+  bool _isAffix(String text) {
+    final t = text.trim();
+    return t.startsWith('-') || t.endsWith('-');
+  }
+
+  /// 获取词汇类型: 'affix' / 'phrase' / 'word'
+  String _getWordType(String text) {
+    if (_isAffix(text)) return 'affix';
+    if (_isPhrase(text)) return 'phrase';
+    return 'word';
+  }
+
+  // ─── 备用短语池 ───
+  static const List<Map<String, String>> _fallbackPhrases = [
+    {'word': 'look at', 'meaning': '看；注视'},
+    {'word': 'look for', 'meaning': '寻找'},
+    {'word': 'look after', 'meaning': '照顾'},
+    {'word': 'look forward to', 'meaning': '期待'},
+    {'word': 'give up', 'meaning': '放弃'},
+    {'word': 'give in', 'meaning': '屈服；让步'},
+    {'word': 'pick up', 'meaning': '捡起；学会'},
+    {'word': 'put on', 'meaning': '穿上'},
+    {'word': 'put off', 'meaning': '推迟'},
+    {'word': 'take off', 'meaning': '脱下；起飞'},
+    {'word': 'take up', 'meaning': '开始从事'},
+    {'word': 'take care of', 'meaning': '照顾'},
+    {'word': 'turn on', 'meaning': '打开'},
+    {'word': 'turn off', 'meaning': '关闭'},
+    {'word': 'turn down', 'meaning': '拒绝；调低'},
+    {'word': 'come up with', 'meaning': '想出'},
+    {'word': 'get along with', 'meaning': '与...相处'},
+    {'word': 'get rid of', 'meaning': '摆脱'},
+    {'word': 'make up', 'meaning': '编造；化妆'},
+    {'word': 'break down', 'meaning': '崩溃；抛锚'},
+    {'word': 'break out', 'meaning': '爆发'},
+    {'word': 'carry out', 'meaning': '执行'},
+    {'word': 'bring up', 'meaning': '抚养；提出'},
+    {'word': 'set up', 'meaning': '建立'},
+    {'word': 'show up', 'meaning': '出现'},
+    {'word': 'work out', 'meaning': '算出；锻炼'},
+    {'word': 'figure out', 'meaning': '弄清楚'},
+    {'word': 'find out', 'meaning': '发现；查明'},
+    {'word': 'point out', 'meaning': '指出'},
+    {'word': 'run out of', 'meaning': '用完'},
+    {'word': 'in fact', 'meaning': '事实上'},
+    {'word': 'in general', 'meaning': '总的来说'},
+    {'word': 'on purpose', 'meaning': '故意地'},
+    {'word': 'by accident', 'meaning': '偶然地'},
+    {'word': 'at first', 'meaning': '起初'},
+    {'word': 'at last', 'meaning': '终于'},
+    {'word': 'after all', 'meaning': '毕竟'},
+    {'word': 'as well', 'meaning': '也'},
+    {'word': 'so far', 'meaning': '到目前为止'},
+    {'word': 'a lot of', 'meaning': '许多的'},
+  ];
+
+  // ─── 备用词缀池 ───
+  static const List<Map<String, String>> _fallbackAffixes = [
+    {'word': 'un-', 'meaning': '前缀，表示"不；否定"'},
+    {'word': 'dis-', 'meaning': '前缀，表示"不；相反"'},
+    {'word': 're-', 'meaning': '前缀，表示"再；重新"'},
+    {'word': 'pre-', 'meaning': '前缀，表示"在...之前"'},
+    {'word': 'mis-', 'meaning': '前缀，表示"错误地"'},
+    {'word': 'over-', 'meaning': '前缀，表示"过度；在上"'},
+    {'word': 'out-', 'meaning': '前缀，表示"超过；在外"'},
+    {'word': 'sub-', 'meaning': '前缀，表示"在下面；次"'},
+    {'word': 'inter-', 'meaning': '前缀，表示"在...之间"'},
+    {'word': 'trans-', 'meaning': '前缀，表示"跨越"'},
+    {'word': 'anti-', 'meaning': '前缀，表示"反对"'},
+    {'word': 'non-', 'meaning': '前缀，表示"非；不"'},
+    {'word': 'multi-', 'meaning': '前缀，表示"多"'},
+    {'word': 'semi-', 'meaning': '前缀，表示"半"'},
+    {'word': 'super-', 'meaning': '前缀，表示"超级"'},
+    {'word': '-tion', 'meaning': '后缀，构成名词'},
+    {'word': '-ness', 'meaning': '后缀，构成名词（表状态）'},
+    {'word': '-ment', 'meaning': '后缀，构成名词（表行为）'},
+    {'word': '-able', 'meaning': '后缀，表示"能...的"'},
+    {'word': '-ful', 'meaning': '后缀，表示"充满...的"'},
+    {'word': '-less', 'meaning': '后缀，表示"没有...的"'},
+    {'word': '-ous', 'meaning': '后缀，表示"...的"'},
+    {'word': '-ly', 'meaning': '后缀，构成副词'},
+    {'word': '-er', 'meaning': '后缀，表示"做...的人"'},
+    {'word': '-ist', 'meaning': '后缀，表示"...者"'},
+    {'word': '-ize', 'meaning': '后缀，表示"使...化"'},
+    {'word': '-ify', 'meaning': '后缀，表示"使成为"'},
+    {'word': '-ive', 'meaning': '后缀，表示"有...性质的"'},
+    {'word': '-al', 'meaning': '后缀，表示"...的"'},
+    {'word': '-en', 'meaning': '后缀，表示"使变成"'},
+  ];
+
+  /// 根据类型选择对应的 fallback 池
+  List<Map<String, String>> _getFallbackForType(String wordType) {
+    switch (wordType) {
+      case 'phrase':
+        return _fallbackPhrases;
+      case 'affix':
+        return _fallbackAffixes;
+      default:
+        return _fallbackWords;
+    }
   }
 
   /// 英选汉的干扰项：返回 ChoiceOption(text=中文释义, subText=英文单词)
+  /// ★ v3.5: 三类匹配 — 单词配单词，短语配短语，词缀配词缀
   List<ChoiceOption> _getChineseDistractorsWithWord(
-      String currentWordId, String correctMeaning, int count) {
+      String currentWordId, String correctWord, String correctMeaning, int count) {
     final results = <ChoiceOption>[];
     final usedMeanings = <String>{correctMeaning};
+    final correctType = _getWordType(correctWord);
 
+    _log('🎲 英选汉干扰项: "$correctWord" type=$correctType');
+
+    // 第一轮：从同批次取相同类型
     final candidates = state.allCards.where((card) {
       final word = card['word'] as Map<String, dynamic>;
       return word['id'].toString() != currentWordId;
@@ -850,17 +1036,20 @@ class StudyNotifier extends StateNotifier<StudyState> {
     for (final card in candidates) {
       if (results.length >= count) break;
       final word = card['word'] as Map<String, dynamic>;
-      final m = _extractMeaning(word);
       final w = word['word'] as String? ?? '';
+      if (w.isEmpty) continue;
+      // ★ 类型匹配
+      if (_getWordType(w) != correctType) continue;
+      final m = _extractMeaning(word);
       if (_isValidMeaning(m) && !usedMeanings.contains(m)) {
         results.add(ChoiceOption(text: m, subText: w));
         usedMeanings.add(m);
       }
     }
 
-    // 从 fallback 补充
+    // 第二轮：从对应类型的 fallback 补充
     if (results.length < count) {
-      final fallbacks = List<Map<String, String>>.from(_fallbackWords);
+      final fallbacks = List<Map<String, String>>.from(_getFallbackForType(correctType));
       fallbacks.shuffle(_random);
       for (final fb in fallbacks) {
         if (results.length >= count) break;
@@ -873,18 +1062,34 @@ class StudyNotifier extends StateNotifier<StudyState> {
       }
     }
 
+    // 第三轮：实在不够，放宽从同批次取任意类型
+    if (results.length < count) {
+      for (final card in candidates) {
+        if (results.length >= count) break;
+        final word = card['word'] as Map<String, dynamic>;
+        final w = word['word'] as String? ?? '';
+        if (w.isEmpty) continue;
+        final m = _extractMeaning(word);
+        if (_isValidMeaning(m) && !usedMeanings.contains(m)) {
+          results.add(ChoiceOption(text: m, subText: w));
+          usedMeanings.add(m);
+        }
+      }
+    }
+
+    _log('🎲 英选汉干扰项结果: ${results.map((r) => '${r.subText}=${r.text}').toList()}');
     return results;
   }
 
   /// 汉选英的干扰项：返回 ChoiceOption(text=英文单词, subText=中文释义)
-  /// ★ v3.4: 类型匹配 — 单词只配单词干扰项，短语只配短语干扰项
+  /// ★ v3.5: 三类匹配 — 单词配单词，短语配短语，词缀配词缀
   List<ChoiceOption> _getEnglishDistractorsWithMeaning(
       String currentWordId, String correctWord, int count) {
     final results = <ChoiceOption>[];
     final usedWords = <String>{correctWord.toLowerCase()};
-    final correctIsPhrase = _isPhrase(correctWord);
+    final correctType = _getWordType(correctWord);
 
-    _log('🎲 汉选英干扰项: "$correctWord" isPhrase=$correctIsPhrase');
+    _log('🎲 汉选英干扰项: "$correctWord" type=$correctType');
 
     // 第一轮：从同批次取相同类型
     final candidates = state.allCards.where((card) {
@@ -898,17 +1103,17 @@ class StudyNotifier extends StateNotifier<StudyState> {
       final word = card['word'] as Map<String, dynamic>;
       final w = word['word'] as String? ?? '';
       if (w.isEmpty || usedWords.contains(w.toLowerCase())) continue;
-      // ★ 类型匹配：只取相同类型
-      if (_isPhrase(w) != correctIsPhrase) continue;
+      // ★ 类型匹配
+      if (_getWordType(w) != correctType) continue;
       final m = _extractMeaning(word);
       final validM = _isValidMeaning(m) ? m : null;
       results.add(ChoiceOption(text: w, subText: validM));
       usedWords.add(w.toLowerCase());
     }
 
-    // 第二轮：从 fallback 补充（fallback 全是单词，只在正确答案也是单词时使用）
-    if (results.length < count && !correctIsPhrase) {
-      final fallbacks = List<Map<String, String>>.from(_fallbackWords);
+    // 第二轮：从对应类型的 fallback 补充
+    if (results.length < count) {
+      final fallbacks = List<Map<String, String>>.from(_getFallbackForType(correctType));
       fallbacks.shuffle(_random);
       for (final fb in fallbacks) {
         if (results.length >= count) break;
@@ -921,7 +1126,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
       }
     }
 
-    // 第三轮：如果仍不足（短语场景同批次不够），放宽限制从同批次取任意类型
+    // 第三轮：实在不够，放宽从同批次取任意类型
     if (results.length < count) {
       for (final card in candidates) {
         if (results.length >= count) break;
@@ -935,7 +1140,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
       }
     }
 
-    _log('🎲 干扰项结果: ${results.map((r) => r.text).toList()}');
+    _log('🎲 汉选英干扰项结果: ${results.map((r) => r.text).toList()}');
     return results;
   }
 

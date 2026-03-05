@@ -363,7 +363,7 @@ async def approve_import_item(
         new_word = Word(
             id=word_id,
             word=word_text,
-            definitions=generated_data.get("definitions", [{"pos": "", "meaning": meaning, "examples": []}]),
+            definitions=generated_data.get("definitions", [{"pos": "", "cn": meaning}]),
             is_reviewed=True,
             review_status="approved",
             ai_generated=True,

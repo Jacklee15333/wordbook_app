@@ -243,6 +243,39 @@ class ImportProcessor:
             session.add(item)
             return "failed"
 
+    @staticmethod
+    def _parse_meaning_to_definitions(meaning: str) -> list:
+        """
+        将 vocabulary.db 中的 meaning 字符串解析为标准 definitions 格式。
+        例如 "n. 桌子;v. 用...设圈套" → [{"pos":"n.","cn":"桌子"},{"pos":"v.","cn":"用...设圈套"}]
+        例如 "未知" → [{"pos":"","cn":"未知"}]
+        """
+        import re
+        if not meaning or not meaning.strip():
+            return []
+
+        definitions = []
+        # 按分号（中英文）分割多个义项
+        parts = re.split(r'[;；]', meaning)
+        # 词性缩写正则: n. / v. / adj. / adv. / prep. / conj. / pron. / int. / vt. / vi. / aux. 等
+        pos_pattern = re.compile(r'^((?:n|v|vt|vi|adj|adv|prep|conj|pron|int|aux|art|num|det|abbr|pl)\.)\s*')
+
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            m = pos_pattern.match(part)
+            if m:
+                pos = m.group(1)  # e.g. "n."
+                cn = part[m.end():].strip()
+            else:
+                pos = ''
+                cn = part
+            if cn:
+                definitions.append({"pos": pos, "cn": cn})
+
+        return definitions if definitions else [{"pos": "", "cn": meaning.strip()}]
+
     async def _find_or_create_word(self, session: AsyncSession,
                                     word_text: str, meaning: str) -> uuid.UUID:
         """在 PostgreSQL 中查找或创建 Word 记录"""
@@ -254,11 +287,14 @@ class ImportProcessor:
         if existing:
             return existing.id
 
+        # 解析 meaning 字符串为标准 definitions 格式（pos + cn）
+        definitions = self._parse_meaning_to_definitions(meaning)
+
         # 创建新的 Word 记录（对齐你的 Word 模型字段）
         new_word = Word(
             id=uuid.uuid4(),
             word=word_text,
-            definitions=[{"pos": "", "meaning": meaning, "examples": []}],
+            definitions=definitions,
             is_reviewed=True,
             review_status="approved",
             ai_generated=False,
