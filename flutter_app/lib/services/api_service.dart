@@ -59,6 +59,20 @@ class ApiService {
     return r.data;
   }
 
+  Future<Map<String, dynamic>> renameWordbook(String wordbookId, String newName) async {
+    final r = await _dio.patch('/wordbooks/$wordbookId', data: {'name': newName});
+    return r.data;
+  }
+
+  Future<List<dynamic>> getWordbookWordsDetail(String wordbookId,
+      {int page = 1, int pageSize = 50}) async {
+    final r = await _dio.get('/wordbooks/$wordbookId/words-detail', queryParameters: {
+      'page': page,
+      'page_size': pageSize,
+    });
+    return r.data;
+  }
+
   Future<List<dynamic>> getWordbookWords(String wordbookId, {int page = 1, int pageSize = 50}) async {
     final r = await _dio.get('/wordbooks/$wordbookId/words', queryParameters: {
       'page': page,

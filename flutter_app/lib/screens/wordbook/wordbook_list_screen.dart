@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme.dart';
 import '../../screens/home/home_screen.dart';
+import '../../screens/wordbook/wordbook_detail_screen.dart';
 import '../../services/api_service.dart';
 
 class WordbookListScreen extends ConsumerStatefulWidget {
@@ -81,11 +82,16 @@ class _WordbookListScreenState extends ConsumerState<WordbookListScreen> {
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () async {
-            final api = ref.read(apiServiceProvider);
-            try { await api.selectWordbook(wb['id']); } catch (_) {}
-            ref.read(selectedWordbookProvider.notifier).state = wb;
-            if (context.mounted) Navigator.pop(context);
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => WordbookDetailScreen(wordbook: wb),
+              ),
+            ).then((_) {
+              // 刷新列表（名称可能已修改）
+              ref.invalidate(wordbooksProvider);
+            });
           },
           child: Container(
             padding: const EdgeInsets.all(20),
@@ -146,7 +152,9 @@ class _WordbookListScreenState extends ConsumerState<WordbookListScreen> {
                   onPressed: () => _showImportDialog(context, wb),
                 ),
                 if (isSelected)
-                  const Icon(Icons.check_circle, color: AppColors.primary),
+                  const Icon(Icons.check_circle, color: AppColors.primary)
+                else
+                  const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
               ],
             ),
           ),

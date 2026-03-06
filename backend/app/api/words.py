@@ -10,7 +10,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user, get_admin_user
 from app.models.user import User
 from app.models.word import Word, Wordbook, WordbookWord
-from app.models.learning import UserWordbook
+from app.models.learning import UserWordbook, UserWordProgress
 from app.schemas import (
     WordResponse, WordCreateRequest,
     WordbookResponse, WordbookCreateRequest,
@@ -417,6 +417,78 @@ async def get_task_results(
         "generated": [i.to_dict() for i in items if i.match_type in ("ai_generated", "dict_generated")],
         "failed": [i.to_dict() for i in items if i.match_type == "ai_failed"],
     }
+
+
+@router.patch("/wordbooks/{wordbook_id}")
+async def rename_wordbook(
+    wordbook_id: UUID,
+    data: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """重命名词书（仅限用户自建词书）"""
+    result = await db.execute(select(Wordbook).where(Wordbook.id == wordbook_id))
+    wordbook = result.scalar_one_or_none()
+    if not wordbook:
+        raise HTTPException(status_code=404, detail="词书不存在")
+    if wordbook.is_builtin:
+        raise HTTPException(status_code=403, detail="内置词书不可重命名")
+    if wordbook.created_by != current_user.id:
+        raise HTTPException(status_code=403, detail="无权操作此词书")
+
+    new_name = (data.get("name") or "").strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="词书名称不能为空")
+
+    wordbook.name = new_name
+    return {"message": "重命名成功", "name": new_name}
+
+
+@router.get("/wordbooks/{wordbook_id}/words-detail")
+async def get_wordbook_words_detail(
+    wordbook_id: UUID,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取词书单词列表（含当前用户的学习状态与错误统计）"""
+    offset = (page - 1) * page_size
+
+    result = await db.execute(
+        select(Word, UserWordProgress)
+        .join(WordbookWord, Word.id == WordbookWord.word_id)
+        .outerjoin(
+            UserWordProgress,
+            and_(
+                UserWordProgress.word_id == Word.id,
+                UserWordProgress.user_id == current_user.id,
+                UserWordProgress.wordbook_id == wordbook_id,
+            ),
+        )
+        .where(WordbookWord.wordbook_id == wordbook_id)
+        .order_by(WordbookWord.sort_order)
+        .offset(offset)
+        .limit(page_size)
+    )
+    rows = result.all()
+
+    return [
+        {
+            "word_id": str(row[0].id),
+            "word": row[0].word,
+            "phonetic_us": row[0].phonetic_us,
+            "definitions": (row[0].definitions or [])[:1],
+            "fsrs_state": row[1].fsrs_state if row[1] else 0,
+            "review_count": row[1].review_count if row[1] else 0,
+            "fsrs_lapses": row[1].fsrs_lapses if row[1] else 0,
+            "last_reviewed_at": (
+                row[1].last_reviewed_at.isoformat()
+                if row[1] and row[1].last_reviewed_at else None
+            ),
+        }
+        for row in rows
+    ]
 
 
 @router.post("/wordbooks/{wordbook_id}/select")
