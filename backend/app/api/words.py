@@ -419,29 +419,57 @@ async def get_task_results(
     }
 
 
-@router.patch("/wordbooks/{wordbook_id}")
+@router.post("/wordbooks/{wordbook_id}/rename")
 async def rename_wordbook(
     wordbook_id: UUID,
     data: dict = Body(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """重命名词书（仅限用户自建词书）"""
+    """重命名词书"""
+    import sys
+    print(f"\n{'='*60}", flush=True)
+    print(f"[RENAME-words.py] ★ 收到请求!", flush=True)
+    print(f"[RENAME-words.py] wordbook_id = {wordbook_id}", flush=True)
+    print(f"[RENAME-words.py] user_id     = {current_user.id}", flush=True)
+    print(f"[RENAME-words.py] data        = {data}", flush=True)
+    sys.stdout.flush()
+
     result = await db.execute(select(Wordbook).where(Wordbook.id == wordbook_id))
-    wordbook = result.scalar_one_or_none()
+    wordbook = result.scalars().first()
+
+    print(f"[RENAME-words.py] wordbook found = {wordbook}", flush=True)
+    if wordbook:
+        print(f"[RENAME-words.py] name={wordbook.name!r} is_builtin={wordbook.is_builtin} created_by={wordbook.created_by}", flush=True)
+
     if not wordbook:
-        raise HTTPException(status_code=404, detail="词书不存在")
+        raise HTTPException(status_code=404, detail=f"词书不存在(id={wordbook_id})")
     if wordbook.is_builtin:
         raise HTTPException(status_code=403, detail="内置词书不可重命名")
-    if wordbook.created_by != current_user.id:
-        raise HTTPException(status_code=403, detail="无权操作此词书")
+    # 兼容 created_by 为 None 的旧数据
+    if wordbook.created_by is not None and wordbook.created_by != current_user.id:
+        raise HTTPException(status_code=403, detail=f"无权操作此词书(created_by={wordbook.created_by}, you={current_user.id})")
 
     new_name = (data.get("name") or "").strip()
     if not new_name:
         raise HTTPException(status_code=400, detail="词书名称不能为空")
 
+    old_name = wordbook.name
     wordbook.name = new_name
+    await db.commit()
+    print(f"[RENAME-words.py] ✅ 成功: {old_name!r} → {new_name!r}", flush=True)
     return {"message": "重命名成功", "name": new_name}
+
+
+@router.patch("/wordbooks/{wordbook_id}")
+async def rename_wordbook_patch_compat(
+    wordbook_id: UUID,
+    data: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """PATCH 兼容入口"""
+    return await rename_wordbook(wordbook_id, data, db, current_user)
 
 
 @router.get("/wordbooks/{wordbook_id}/words-detail")

@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/theme.dart';
@@ -14,6 +15,15 @@ class ApiService {
       headers: {'Content-Type': 'application/json'},
     ));
     _dio.interceptors.add(_AuthInterceptor());
+    // ★ 调试用：打印所有请求和响应
+    _dio.interceptors.add(LogInterceptor(
+      requestBody: true,
+      responseBody: true,
+      requestHeader: false,
+      responseHeader: false,
+      error: true,
+      logPrint: (o) => debugPrint('[DIO] $o'),
+    ));
   }
 
   // ---- Auth ----
@@ -60,7 +70,8 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> renameWordbook(String wordbookId, String newName) async {
-    final r = await _dio.patch('/wordbooks/$wordbookId', data: {'name': newName});
+    // 使用 POST /rename 代替 PATCH，避免部分环境对 PATCH 方法的拦截
+    final r = await _dio.post('/wordbooks/$wordbookId/rename', data: {'name': newName});
     return r.data;
   }
 

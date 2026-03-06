@@ -51,6 +51,70 @@ async def test_path_param(some_id: str):
     return {"matched": True, "some_id": some_id}
 
 
+# ===== 验证文件是否更新 — 无需登录，在浏览器直接访问 =====
+@app.get("/api/v1/rename-check")
+async def rename_check():
+    """访问 http://localhost:8000/api/v1/rename-check 验证后端是否更新"""
+    return {
+        "status": "main.py已更新",
+        "version": "rename-debug-v3",
+        "rename_route": "POST /api/v1/wordbooks/{id}/rename",
+    }
+
+
+# ===== ★★★ 重命名词书 — 直接注册，绕过 router 加载问题 ★★★ =====
+from fastapi import Body as MainBody
+
+@app.post("/api/v1/wordbooks/{wordbook_id}/rename")
+async def rename_wordbook_direct(
+    wordbook_id: str,
+    data: dict = MainBody(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """重命名词书 — 直接注册在 main.py"""
+    print(f"\n{'='*60}")
+    print(f"[RENAME] ★ 收到重命名请求!")
+    print(f"[RENAME] wordbook_id = {wordbook_id!r}")
+    print(f"[RENAME] data        = {data!r}")
+    print(f"[RENAME] user_id     = {current_user.id!r}")
+    print(f"{'='*60}\n")
+    logger.info(f"[RENAME] wordbook_id={wordbook_id} data={data} user={current_user.id}")
+
+    import uuid as _uuid
+    try:
+        wb_uuid = _uuid.UUID(str(wordbook_id).strip())
+    except ValueError as ve:
+        print(f"[RENAME] ❌ UUID解析失败: {ve}")
+        raise HTTPException(status_code=400, detail=f"无效的词书ID格式: {wordbook_id!r}")
+
+    result = await db.execute(select(Wordbook).where(Wordbook.id == wb_uuid))
+    wordbook = result.scalars().first()
+
+    if not wordbook:
+        print(f"[RENAME] ❌ 词书不存在 uuid={wb_uuid}")
+        raise HTTPException(status_code=404, detail=f"词书不存在 (id={wordbook_id})")
+
+    print(f"[RENAME] ✅ 找到词书: name={wordbook.name!r} is_builtin={wordbook.is_builtin} created_by={wordbook.created_by!r}")
+
+    if wordbook.is_builtin:
+        print(f"[RENAME] ❌ 是内置词书，不可重命名")
+        raise HTTPException(status_code=403, detail="内置词书不可重命名")
+    if wordbook.created_by is not None and wordbook.created_by != current_user.id:
+        print(f"[RENAME] ❌ 非创建者: created_by={wordbook.created_by} user={current_user.id}")
+        raise HTTPException(status_code=403, detail="无权操作此词书（非创建者）")
+
+    new_name = (data.get("name") or "").strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="词书名称不能为空")
+
+    old_name = wordbook.name
+    wordbook.name = new_name
+    await db.commit()
+    print(f"[RENAME] ✅ 成功: {old_name!r} → {new_name!r}")
+    return {"message": "重命名成功", "name": new_name}
+
+
 # ===== ★★★ 导入 V2 端点 — 直接在 app 上注册，不通过 router ★★★ =====
 
 @app.get("/api/v1/wordbooks/{wordbook_id}/batch-import")

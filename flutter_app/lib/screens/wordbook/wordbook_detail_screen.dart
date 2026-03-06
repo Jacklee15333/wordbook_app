@@ -5,6 +5,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
 import '../../core/theme.dart';
 import '../../screens/home/home_screen.dart';
 import '../../services/api_service.dart';
@@ -748,7 +749,12 @@ class _WordbookDetailScreenState extends ConsumerState<WordbookDetailScreen>
                       ss(() => isSaving = true);
                       try {
                         final api = ref.read(apiServiceProvider);
-                        await api.renameWordbook(_wb['id'].toString(), name);
+                        final wbId = _wb['id'].toString();
+                        // ★ 调试：在 Flutter 控制台打印请求信息
+                        debugPrint('[RENAME-DEBUG] wordbook id = $wbId');
+                        debugPrint('[RENAME-DEBUG] new name    = $name');
+                        debugPrint('[RENAME-DEBUG] full url    = POST http://localhost:8000/api/v1/wordbooks/$wbId/rename');
+                        await api.renameWordbook(wbId, name);
                         if (mounted) {
                           setState(() => _wb['name'] = name);
                           ref.invalidate(wordbooksProvider);
@@ -760,10 +766,32 @@ class _WordbookDetailScreenState extends ConsumerState<WordbookDetailScreen>
                         }
                       } catch (e) {
                         ss(() => isSaving = false);
+                        // ★ 调试：打印完整错误信息
+                        debugPrint('[RENAME-DEBUG] ❌ 错误类型: ${e.runtimeType}');
+                        if (e is DioException) {
+                          debugPrint('[RENAME-DEBUG] HTTP状态: ${e.response?.statusCode}');
+                          debugPrint('[RENAME-DEBUG] 响应数据: ${e.response?.data}');
+                          debugPrint('[RENAME-DEBUG] 请求URL: ${e.requestOptions.uri}');
+                          debugPrint('[RENAME-DEBUG] 请求方法: ${e.requestOptions.method}');
+                        }
                         if (mounted) {
+                          String errMsg = '重命名失败';
+                          if (e is DioException) {
+                            final detail = e.response?.data?['detail'];
+                            final status = e.response?.statusCode;
+                            final url = e.requestOptions.uri.toString();
+                            if (detail != null) {
+                              errMsg = '重命名失败: $detail（HTTP $status）\nURL: $url';
+                            } else {
+                              errMsg = '重命名失败: HTTP $status\nURL: $url';
+                            }
+                          } else {
+                            errMsg = '重命名失败: $e';
+                          }
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text('重命名失败: $e'),
+                            content: Text(errMsg),
                             backgroundColor: AppColors.error,
+                            duration: const Duration(seconds: 8),
                           ));
                         }
                       }
