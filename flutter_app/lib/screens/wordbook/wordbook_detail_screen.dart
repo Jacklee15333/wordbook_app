@@ -190,12 +190,13 @@ class _WordbookDetailScreenState extends ConsumerState<WordbookDetailScreen>
     final pct = (_progress?['progress_percent'] ?? 0.0) as num;
     final notLearned = (total - mastered - learning).clamp(0, total);
 
-    // 找到"当前学到"的位置（第一个未掌握的单词）
-    int currentIdx = -1;
-    for (int i = 0; i < _words.length; i++) {
-      if ((_words[i]['fsrs_state'] ?? 0) != 2) { currentIdx = i; break; }
+    // 用已掌握数量直接定位「当前学到」，避免 fsrs_state 不准确导致的错位
+    final masteredCount = mastered.toInt();
+    int currentIdx = masteredCount; // 0-based，第 masteredCount 个即为下一个待学
+    String? currentWord;
+    if (_words.isNotEmpty && currentIdx < _words.length) {
+      currentWord = _words[currentIdx]['word'];
     }
-    final currentWord = currentIdx >= 0 ? _words[currentIdx]['word'] : null;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -352,11 +353,9 @@ class _WordbookDetailScreenState extends ConsumerState<WordbookDetailScreen>
       );
     }
 
-    // 第一个非"已掌握"单词为当前位置
-    int currentIdx = -1;
-    for (int i = 0; i < _words.length; i++) {
-      if ((_words[i]['fsrs_state'] ?? 0) != 2) { currentIdx = i; break; }
-    }
+    // 与进度卡片保持一致：用已掌握数量直接定位当前单词
+    final masteredCount = (_progress?['mastered'] ?? 0) as num;
+    final currentIdx = masteredCount.toInt(); // 0-based
 
     return ListView.builder(
       controller: _wordScrollCtrl,
@@ -369,46 +368,34 @@ class _WordbookDetailScreenState extends ConsumerState<WordbookDetailScreen>
             child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
           );
         }
-        return _buildWordTile(_words[index], index + 1, index == currentIdx);
+        return _buildWordTile(
+          _words[index],
+          index + 1,
+          index == currentIdx,
+          isStudied: index < currentIdx,
+        );
       },
     );
   }
 
-  Widget _buildWordTile(Map<String, dynamic> word, int index, bool isCurrent) {
-    final state = (word['fsrs_state'] ?? 0) as int;
+  Widget _buildWordTile(Map<String, dynamic> word, int index, bool isCurrent,
+      {bool isStudied = false}) {
     final reviewCount = (word['review_count'] ?? 0) as int;
     final lapses = (word['fsrs_lapses'] ?? 0) as int;
 
-    Color stateColor;
-    String stateLabel;
-    IconData stateIcon;
-    switch (state) {
-      case 2:
-        stateColor = AppColors.success;
-        stateLabel = '已掌握';
-        stateIcon = Icons.check_circle;
-        break;
-      case 1:
-        stateColor = AppColors.primary;
-        stateLabel = '学习中';
-        stateIcon = Icons.school;
-        break;
-      case 3:
-        stateColor = AppColors.accent;
-        stateLabel = '重学中';
-        stateIcon = Icons.refresh;
-        break;
-      default:
-        stateColor = AppColors.textHint;
-        stateLabel = '未学习';
-        stateIcon = Icons.radio_button_unchecked;
-    }
-
+    // 右侧状态：优先用位置推断，fsrs_state 仅作参考
     final defs = word['definitions'] as List?;
-    String shortDef = '';
+    // 提取所有词性+含义，最多显示3条
+    // 后端字段：pos（词性）、cn（中文含义）
+    final List<String> defLines = [];
     if (defs != null && defs.isNotEmpty) {
-      final d = defs.first;
-      shortDef = (d['meaning'] ?? d['chinese'] ?? '').toString();
+      for (final d in defs.take(3)) {
+        final pos = (d['pos'] ?? d['part_of_speech'] ?? '').toString().trim();
+        final meaning = (d['cn'] ?? d['meaning'] ?? d['chinese'] ?? '').toString().trim();
+        if (meaning.isNotEmpty) {
+          defLines.add(pos.isNotEmpty ? '$pos $meaning' : meaning);
+        }
+      }
     }
 
     return Container(
@@ -468,43 +455,87 @@ class _WordbookDetailScreenState extends ConsumerState<WordbookDetailScreen>
                       ],
                     ],
                   ),
-                  if (shortDef.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(shortDef,
+                  if (defLines.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    ...defLines.map((line) => Padding(
+                      padding: const EdgeInsets.only(bottom: 1),
+                      child: Text(
+                        line,
                         style: const TextStyle(
                             fontSize: 11, color: AppColors.textSecondary),
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    )),
                   ],
                 ],
               ),
             ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(stateIcon, size: 11, color: stateColor),
-                    const SizedBox(width: 3),
-                    Text(stateLabel,
+            // ── 右侧状态区 ──────────────────────────────
+            if (isStudied) ...[
+              // 已学过：显示错误次数
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        lapses > 0 ? Icons.cancel_outlined : Icons.check_circle,
+                        size: 11,
+                        color: lapses > 0 ? AppColors.error : AppColors.success,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        lapses > 0 ? '错误 $lapses 次' : '✓ 无错误',
                         style: TextStyle(
-                            fontSize: 10,
-                            color: stateColor,
-                            fontWeight: FontWeight.w600)),
-                  ],
-                ),
-                if (reviewCount > 0) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    '复习${reviewCount}次'
-                    '${lapses > 0 ? " · 错${lapses}次" : ""}',
-                    style: const TextStyle(
-                        fontSize: 9, color: AppColors.textHint),
+                          fontSize: 10,
+                          color: lapses > 0 ? AppColors.error : AppColors.success,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
+                  if (reviewCount > 0) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      '共复习 $reviewCount 次',
+                      style: const TextStyle(
+                          fontSize: 9, color: AppColors.textHint),
+                    ),
+                  ],
                 ],
-              ],
-            ),
+              ),
+            ] else if (isCurrent) ...[
+              // 当前单词：显示"学习中"
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.school, size: 11, color: AppColors.primary),
+                  const SizedBox(width: 3),
+                  const Text('学习中',
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ] else ...[
+              // 未学习
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.radio_button_unchecked,
+                      size: 11, color: AppColors.textHint),
+                  SizedBox(width: 3),
+                  Text('未学习',
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: AppColors.textHint,
+                          fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -615,7 +646,7 @@ class _WordbookDetailScreenState extends ConsumerState<WordbookDetailScreen>
     final defs = word['definitions'] as List?;
     String shortDef = '';
     if (defs != null && defs.isNotEmpty) {
-      shortDef = (defs.first['meaning'] ?? defs.first['chinese'] ?? '').toString();
+      shortDef = (defs.first['cn'] ?? defs.first['meaning'] ?? defs.first['chinese'] ?? '').toString();
     }
 
     final Color rankColor = rank <= 3
