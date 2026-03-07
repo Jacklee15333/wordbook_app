@@ -3,10 +3,12 @@
 // ║  v3.6: 三类干扰项匹配（单词/短语/词缀）+ definitions多格式兼容      ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
 
+import 'dart:convert';
 import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 
 const String _kVersion = '📦 study_provider v3.6 (2026-03-04) 三类干扰项匹配';
@@ -437,6 +439,103 @@ class StudyNotifier extends StateNotifier<StudyState> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
+  // 进度持久化 — 按词书ID独立保存，当天有效
+  // ═══════════════════════════════════════════════════════════════════════
+
+  String _sessionKey(String wordbookId) => 'study_session_$wordbookId';
+  String _todayStr() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _saveSession() async {
+    if (_wordbookId == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final queueData = state.queueItems.map((item) => {
+        'wordId': item.wordId,
+        'orderIndex': item.orderIndex,
+        'currentStep': item.currentStep.index,
+        'cooldown': item.cooldown,
+        'unlocked': item.unlocked,
+        'completed': item.completed,
+        'attempts': item.attempts,
+      }).toList();
+
+      final sessionData = jsonEncode({
+        'date': _todayStr(),
+        'wordbookId': _wordbookId,
+        'completedWordCount': state.completedWordCount,
+        'queueItems': queueData,
+        'newWords': state.newWords,
+        'reviewWords': state.reviewWords,
+      });
+
+      await prefs.setString(_sessionKey(_wordbookId!), sessionData);
+      _log('💾 进度已保存: ${state.completedWordCount}/${state.totalWords} 词完成');
+    } catch (e) {
+      _log('⚠️ 保存进度失败: $e');
+    }
+  }
+
+  Future<bool> _restoreSession(String wordbookId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_sessionKey(wordbookId));
+      if (raw == null) return false;
+
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      if (data['date'] != _todayStr()) {
+        _log('🗑️ 旧进度已过期（${data['date']}），重新开始');
+        await prefs.remove(_sessionKey(wordbookId));
+        return false;
+      }
+
+      final queueData = (data['queueItems'] as List).cast<Map<String, dynamic>>();
+      final restoredQueue = queueData.map((q) => QueueItem(
+        wordId: q['wordId'] as String,
+        orderIndex: q['orderIndex'] as int,
+        currentStep: TestStep.values[q['currentStep'] as int],
+        cooldown: q['cooldown'] as int,
+        unlocked: q['unlocked'] as bool,
+        completed: q['completed'] as bool,
+        attempts: q['attempts'] as int,
+      )).toList();
+
+      final newWords = (data['newWords'] as List).cast<Map<String, dynamic>>();
+      final reviewWords = (data['reviewWords'] as List).cast<Map<String, dynamic>>();
+      final completedWordCount = data['completedWordCount'] as int;
+
+      final validNewCount = newWords.length;
+      final validReviewCount = reviewWords.length;
+
+      state = StudyState(
+        isLoading: false,
+        newWords: newWords,
+        reviewWords: reviewWords,
+        totalNew: validNewCount,
+        totalReview: validReviewCount,
+        queueItems: restoredQueue,
+        completedWordCount: completedWordCount,
+      );
+
+      _log('✅ 进度已恢复: $completedWordCount/${restoredQueue.length} 词完成');
+      return true;
+    } catch (e) {
+      _log('⚠️ 恢复进度失败: $e');
+      return false;
+    }
+  }
+
+  Future<void> clearSession(String wordbookId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_sessionKey(wordbookId));
+      _log('🗑️ 已清除进度: $wordbookId');
+    } catch (_) {}
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
   // 加载今日任务
   // ═══════════════════════════════════════════════════════════════════════
 
@@ -444,6 +543,13 @@ class StudyNotifier extends StateNotifier<StudyState> {
     _wordbookId = wordbookId;
     state = const StudyState(isLoading: true);
     _log('📥 加载今日任务: wordbookId=$wordbookId');
+
+    // ★ 先尝试恢复当天进度
+    final restored = await _restoreSession(wordbookId);
+    if (restored) {
+      _generateNextQuestion();
+      return;
+    }
 
     try {
       final data = await _api.getTodayTask(wordbookId);
@@ -1242,6 +1348,8 @@ class StudyNotifier extends StateNotifier<StudyState> {
       _unlockNextWord(items);
     }
     state = state.copyWith(queueItems: items);
+    // ★ 每次答题后保存进度
+    _saveSession();
   }
 
   void _unlockNextWord(List<QueueItem> items) {

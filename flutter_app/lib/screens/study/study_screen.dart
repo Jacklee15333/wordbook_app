@@ -621,7 +621,11 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                     _selectedLetters = [];
                     _letterUsed = [];
                   });
-                  ref.read(studyProvider.notifier).nextQuestion();
+                  if (study.isComplete) {
+                    Navigator.pop(context);
+                  } else {
+                    ref.read(studyProvider.notifier).nextQuestion();
+                  }
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor:
