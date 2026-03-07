@@ -140,21 +140,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: AppColors.success.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            _kHomeVersion,
-            style: const TextStyle(fontSize: 11, color: AppColors.success),
-            textAlign: TextAlign.center,
-          ),
-        ),
-
-        _buildWordbookCard(wb),
+_buildWordbookCard(wb),
         const SizedBox(height: 20),
 
         progress.when(
@@ -382,30 +368,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
 
-            // ★ v4.0: 有未保存更改时提示
-            if (hasPendingChange) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.accent.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.accent.withOpacity(0.3)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 16, color: AppColors.accent),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '服务器已保存计划：每天 $backendDailyWords 词。点击「保存计划」使新选择生效，今日任务会随之更新。',
-                        style: TextStyle(fontSize: 12, color: AppColors.accent),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+
 
             const SizedBox(height: 20),
 
@@ -498,23 +461,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               children: [
                 Expanded(
                   child: _buildTodayStatItem(
-                    icon: Icons.fiber_new_rounded,
-                    iconColor: AppColors.primary,
+                    icon: Icons.menu_book_rounded,
+                    iconColor: AppColors.textHint,
                     count: study.isLoading ? null : study.totalNew,
                     label: '今日新词',
                     sublabel: '按计划学习',
-                    countColor: AppColors.primary,
+                    countColor: AppColors.textPrimary,
                   ),
                 ),
                 Container(width: 1, height: 70, color: AppColors.divider),
                 Expanded(
                   child: _buildTodayStatItem(
                     icon: Icons.replay_rounded,
-                    iconColor: AppColors.accent,
+                    iconColor: AppColors.textHint,
                     count: study.isLoading ? null : study.totalReview,
                     label: '到期复习',
                     sublabel: '遗忘曲线推算',
-                    countColor: AppColors.accent,
+                    countColor: AppColors.textPrimary,
                   ),
                 ),
                 Container(width: 1, height: 70, color: AppColors.divider),
@@ -531,29 +494,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ],
             ),
 
-            // 新词数与计划不符提示
-            if (!study.isLoading && !newWordsMatchPlan && study.totalNew > 0) ...[
-              const SizedBox(height: 14),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.06),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.lightbulb_outline, size: 15, color: AppColors.primary),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '新词显示 ${study.totalNew} 个（计划 $savedDailyWords 个）。可能原因：词书剩余词数不足，或计划尚未保存到服务器。',
-                        style: TextStyle(fontSize: 11, color: AppColors.primary.withOpacity(0.85)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+
 
             if (!study.isLoading && totalToday == 0) ...[
               const SizedBox(height: 14),

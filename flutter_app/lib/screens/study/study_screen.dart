@@ -28,9 +28,8 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          '${study.completedWordCount} / ${study.totalWords} 单词'
-          '  ·  ${study.completedQuestions} / ${study.totalQuestions} 题',
-          style: const TextStyle(fontSize: 14),
+          '第 ${study.completedWordCount + 1} 词  /  共 ${study.totalWords} 词',
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
         ),
         leading: IconButton(
           icon: const Icon(Icons.close),
@@ -68,7 +67,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
         _buildStepIndicator(question.step),
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
             child: Column(
               children: [
                 const SizedBox(height: 16),
@@ -78,11 +77,14 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                   _buildSpellingArea(question, study)
                 else
                   _buildChoiceOptions(question, study),
+                if (study.isShowingResult) ...[
+                  const SizedBox(height: 20),
+                  _buildResultFooter(study),
+                ],
               ],
             ),
           ),
         ),
-        if (study.isShowingResult) _buildResultFooter(study),
       ],
     );
   }
@@ -159,19 +161,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
         padding: const EdgeInsets.all(28),
         child: Column(
           children: [
-            Text(
-              isEnToCn
-                  ? '请选择该单词的中文释义'
-                  : isCnToEn
-                      ? '请选择对应的英文单词'
-                      : '请拼写出该单词',
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppColors.textHint,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
             if (isEnToCn || isSpelling) ...[
               Text(
                 isSpelling ? question.meaning : question.word,
@@ -562,25 +552,18 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
 
     final isCorrect = result.isCorrect;
 
-    return SafeArea(
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: isCorrect
-              ? AppColors.success.withOpacity(0.08)
-              : AppColors.error.withOpacity(0.08),
-          border: Border(
-            top: BorderSide(
-              color: isCorrect
-                  ? AppColors.success.withOpacity(0.3)
-                  : AppColors.error.withOpacity(0.3),
-            ),
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: isCorrect
+            ? AppColors.success.withOpacity(0.08)
+            : AppColors.error.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
             Row(
               children: [
                 Icon(
@@ -655,12 +638,10 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
             ),
           ],
         ),
-      ),
     );
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 完成视图
   // ═══════════════════════════════════════════════════════════════════════
 
   Widget _buildCompleteView(StudyState study) {
