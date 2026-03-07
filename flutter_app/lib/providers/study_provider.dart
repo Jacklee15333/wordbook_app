@@ -1,6 +1,6 @@
 // ╔═══════════════════════════════════════════════════════════════════════╗
-// ║  study_provider.dart  v3.6  2026-03-04                              ║
-// ║  v3.6: 三类干扰项匹配（单词/短语/词缀）+ definitions多格式兼容      ║
+// ║  study_provider.dart  v3.9  2026-03-07                              ║
+// ║  v3.9: 步骤自然交错 + 间隔2题 + 单词书顺序                          ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
 
 import 'dart:convert';
@@ -11,7 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 
-const String _kVersion = '📦 study_provider v3.6 (2026-03-04) 三类干扰项匹配';
+const String _kVersion = '📦 study_provider v3.9 (2026-03-07) 步骤自然交错+间隔2题';
 
 void _log(String msg) {
   debugPrint('[STUDY] $msg');
@@ -217,6 +217,10 @@ class StudyNotifier extends StateNotifier<StudyState> {
   final ApiService _api;
   String? _wordbookId;
   final Random _random = Random();
+  /// ★ v3.7: 记录当前正在学习的单词ID，用于退出后恢复
+  String? _lastStudyingWordId;
+  /// ★ v3.8 fix: 恢复标志，仅在 session 恢复后生效一次
+  bool _pendingRestore = false;
 
   static const int _minGap = 2;
 
@@ -464,11 +468,13 @@ class StudyNotifier extends StateNotifier<StudyState> {
 
       final sessionData = jsonEncode({
         'date': _todayStr(),
+        'sessionVersion': 4,  // ★ v3.9: 步骤交错调度
         'wordbookId': _wordbookId,
         'completedWordCount': state.completedWordCount,
         'queueItems': queueData,
         'newWords': state.newWords,
         'reviewWords': state.reviewWords,
+        'lastStudyingWordId': _lastStudyingWordId,
       });
 
       await prefs.setString(_sessionKey(_wordbookId!), sessionData);
@@ -490,6 +496,13 @@ class StudyNotifier extends StateNotifier<StudyState> {
         await prefs.remove(_sessionKey(wordbookId));
         return false;
       }
+      // ★ v3.8: 版本校验，旧版session自动失效以应用新调度逻辑
+      final sessionVersion = data['sessionVersion'] as int? ?? 0;
+      if (sessionVersion < 4) {
+        _log('🗑️ 旧版session(v$sessionVersion)，清除并重新开始');
+        await prefs.remove(_sessionKey(wordbookId));
+        return false;
+      }
 
       final queueData = (data['queueItems'] as List).cast<Map<String, dynamic>>();
       final restoredQueue = queueData.map((q) => QueueItem(
@@ -505,6 +518,8 @@ class StudyNotifier extends StateNotifier<StudyState> {
       final newWords = (data['newWords'] as List).cast<Map<String, dynamic>>();
       final reviewWords = (data['reviewWords'] as List).cast<Map<String, dynamic>>();
       final completedWordCount = data['completedWordCount'] as int;
+      _lastStudyingWordId = data['lastStudyingWordId'] as String?;
+      _pendingRestore = _lastStudyingWordId != null;
 
       final validNewCount = newWords.length;
       final validReviewCount = reviewWords.length;
@@ -542,7 +557,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
   Future<void> loadTodayTask(String wordbookId) async {
     _wordbookId = wordbookId;
     state = const StudyState(isLoading: true);
-    _log('📥 加载今日任务: wordbookId=$wordbookId');
+    _log('📥 加载今日任务: wordbookId=$wordbookId (v3.9, _minGap=$_minGap)');
 
     // ★ 先尝试恢复当天进度
     final restored = await _restoreSession(wordbookId);
@@ -621,15 +636,23 @@ class StudyNotifier extends StateNotifier<StudyState> {
   int? _getNextQuestionIndex() {
     final items = state.queueItems;
     final candidates = <int>[];
+
+    // ★ v3.8 调试: 打印所有队列项状态
+    _log('┌─── 选题调度 (v3.9 _minGap=$_minGap) ───');
     for (int i = 0; i < items.length; i++) {
       final item = items[i];
+      final status = item.completed ? '✅完成' : (item.unlocked ? '🔓' : '🔒');
+      _log('│ [$i] wordId=${item.wordId} step=${item.currentStep.name} cd=${item.cooldown} $status');
       if (item.unlocked && !item.completed && item.cooldown == 0) {
         candidates.add(i);
       }
     }
 
     if (candidates.isEmpty) {
-      if (items.every((item) => item.completed)) return null;
+      if (items.every((item) => item.completed)) {
+        _log('└─── 全部完成 ───');
+        return null;
+      }
       final unlockedNotCompleted = <int>[];
       for (int i = 0; i < items.length; i++) {
         if (items[i].unlocked && !items[i].completed) {
@@ -639,12 +662,27 @@ class StudyNotifier extends StateNotifier<StudyState> {
       if (unlockedNotCompleted.isNotEmpty) {
         unlockedNotCompleted
             .sort((a, b) => items[a].cooldown.compareTo(items[b].cooldown));
+        _log('│ ⏳ 无cd=0候选, 选cooldown最小的: idx=${unlockedNotCompleted.first}');
+        _log('└───────────────');
         return unlockedNotCompleted.first;
       }
+      _log('└─── 无可用候选 ───');
       return null;
     }
 
-    candidates.sort((a, b) => items[a].orderIndex.compareTo(items[b].orderIndex));
+    // ★ v3.9: 按单词书原始顺序（orderIndex）出题，
+    //         cooldown=2 自然实现步骤交错（同一单词隔2题后才出下一步）
+    candidates.sort((a, b) =>
+        items[a].orderIndex.compareTo(items[b].orderIndex));
+
+    // ★ v3.8 调试: 打印候选排序结果
+    _log('│ 候选(排序后):');
+    for (final c in candidates) {
+      _log('│   idx=$c wordId=${items[c].wordId} step=${items[c].currentStep.name} order=${items[c].orderIndex}');
+    }
+    _log('│ ✅ 选中: idx=${candidates.first} step=${items[candidates.first].currentStep.name}');
+    _log('└───────────────');
+
     return candidates.first;
   }
 
@@ -653,7 +691,21 @@ class StudyNotifier extends StateNotifier<StudyState> {
   // ═══════════════════════════════════════════════════════════════════════
 
   void _generateNextQuestion() {
-    final idx = _getNextQuestionIndex();
+    // ★ v3.8 fix: 仅在 session 恢复后第一次出题时，回到上次的单词
+    int? idx;
+    if (_pendingRestore && _lastStudyingWordId != null) {
+      _pendingRestore = false; // 只用一次，后续正常调度
+      final savedId = _lastStudyingWordId!;
+      final savedIdx = state.queueItems.indexWhere(
+        (item) => item.wordId == savedId && !item.completed,
+      );
+      if (savedIdx >= 0) {
+        idx = savedIdx;
+        _log('🔄 恢复到上次学习的单词: wordId=$savedId');
+      }
+    }
+    idx ??= _getNextQuestionIndex();
+
     if (idx == null) {
       state = state.copyWith(clearCurrentQuestion: true);
       return;
@@ -688,6 +740,9 @@ class StudyNotifier extends StateNotifier<StudyState> {
     }
 
     _log('🎯 ${item.currentStep}: word=$wordText, options=${question.options.map((o) => o.text).toList()}');
+
+    // ★ v3.7: 记录当前正在学习的单词ID
+    _lastStudyingWordId = item.wordId;
 
     state = state.copyWith(
       currentQuestion: question,
@@ -1319,6 +1374,9 @@ class StudyNotifier extends StateNotifier<StudyState> {
     final item = items[idx];
     item.attempts++;
 
+    final oldStep = item.currentStep.name;
+    _log('📝 答题: wordId=$wordId step=$oldStep ${isCorrect ? "✅正确" : "❌错误"}');
+
     for (int i = 0; i < items.length; i++) {
       if (i != idx && items[i].cooldown > 0) items[i].cooldown--;
     }
@@ -1329,23 +1387,27 @@ class StudyNotifier extends StateNotifier<StudyState> {
           item.currentStep = TestStep.cnToEn;
           item.cooldown = _minGap;
           _unlockNextWord(items);
+          _log('📝 → 进入cnToEn, cooldown=$_minGap');
           break;
         case TestStep.cnToEn:
           item.currentStep = TestStep.spelling;
           item.cooldown = _minGap;
           _unlockNextWord(items);
+          _log('📝 → 进入spelling, cooldown=$_minGap');
           break;
         case TestStep.spelling:
           item.completed = true;
           item.cooldown = 0;
           _unlockNextWord(items);
           state = state.copyWith(completedWordCount: state.completedWordCount + 1);
+          _log('📝 → 单词完成!');
           break;
       }
     } else {
       item.currentStep = TestStep.enToCn;
       item.cooldown = _minGap;
       _unlockNextWord(items);
+      _log('📝 → 回退到enToCn, cooldown=$_minGap');
     }
     state = state.copyWith(queueItems: items);
     // ★ 每次答题后保存进度
