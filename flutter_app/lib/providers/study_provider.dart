@@ -135,6 +135,9 @@ class StudyState {
   final AnswerResult? lastResult;
   final bool isShowingResult;
   final int completedWordCount;
+  /// ★ v4.0: 单词学习界面
+  final bool isShowingWordDetail;
+  final Map<String, dynamic>? wordDetailData;
 
   const StudyState({
     this.isLoading = true,
@@ -149,6 +152,8 @@ class StudyState {
     this.lastResult,
     this.isShowingResult = false,
     this.completedWordCount = 0,
+    this.isShowingWordDetail = false,
+    this.wordDetailData,
   });
 
   List<Map<String, dynamic>> get allCards => [...reviewWords, ...newWords];
@@ -189,6 +194,9 @@ class StudyState {
     int? completedWordCount,
     bool clearCurrentQuestion = false,
     bool clearLastResult = false,
+    bool? isShowingWordDetail,
+    Map<String, dynamic>? wordDetailData,
+    bool clearWordDetail = false,
   }) {
     return StudyState(
       isLoading: isLoading ?? this.isLoading,
@@ -205,6 +213,9 @@ class StudyState {
           clearLastResult ? null : (lastResult ?? this.lastResult),
       isShowingResult: isShowingResult ?? this.isShowingResult,
       completedWordCount: completedWordCount ?? this.completedWordCount,
+      isShowingWordDetail: isShowingWordDetail ?? this.isShowingWordDetail,
+      wordDetailData:
+          clearWordDetail ? null : (wordDetailData ?? this.wordDetailData),
     );
   }
 }
@@ -221,6 +232,8 @@ class StudyNotifier extends StateNotifier<StudyState> {
   String? _lastStudyingWordId;
   /// ★ v3.8 fix: 恢复标志，仅在 session 恢复后生效一次
   bool _pendingRestore = false;
+  /// ★ v4.0: 记录刚完成三步的单词ID，用于弹出学习界面
+  String? _justCompletedWordId;
 
   static const int _minGap = 2;
 
@@ -1363,6 +1376,32 @@ class StudyNotifier extends StateNotifier<StudyState> {
   }
 
   void nextQuestion() {
+    // ★ v4.0: 如果刚完成了一个单词的三步测试，先展示学习界面
+    if (_justCompletedWordId != null) {
+      final wordId = _justCompletedWordId!;
+      _justCompletedWordId = null;
+      final card = _findCardByWordId(wordId);
+      if (card != null) {
+        final word = card['word'] as Map<String, dynamic>;
+        state = state.copyWith(
+          isShowingWordDetail: true,
+          wordDetailData: word,
+          clearLastResult: true,
+          isShowingResult: false,
+        );
+        _log('📖 展示单词学习界面: ${word['word']}');
+        return;
+      }
+    }
+    _generateNextQuestion();
+  }
+
+  /// ★ v4.0: 关闭单词学习界面，继续下一题
+  void dismissWordDetail() {
+    state = state.copyWith(
+      isShowingWordDetail: false,
+      clearWordDetail: true,
+    );
     _generateNextQuestion();
   }
 
@@ -1382,6 +1421,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
     }
 
     if (isCorrect) {
+      _justCompletedWordId = wordId;  // ★ v4.0: 每步答对后都展示学习界面
       switch (item.currentStep) {
         case TestStep.enToCn:
           item.currentStep = TestStep.cnToEn;
@@ -1404,6 +1444,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
           break;
       }
     } else {
+      _justCompletedWordId = wordId;  // ★ v4.0: 答错也展示学习界面加深印象
       item.currentStep = TestStep.enToCn;
       item.cooldown = _minGap;
       _unlockNextWord(items);

@@ -48,11 +48,13 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
           ? const Center(child: CircularProgressIndicator())
           : study.error != null
               ? _buildErrorView(study.error!)
-              : study.isComplete
-                  ? _buildCompleteView(study)
-                  : study.currentQuestion != null
-                      ? _buildQuestionView(study)
-                      : _buildCompleteView(study),
+              : study.isShowingWordDetail
+                  ? _buildWordDetailView(study)
+                  : study.isComplete
+                      ? _buildCompleteView(study)
+                      : study.currentQuestion != null
+                          ? _buildQuestionView(study)
+                          : _buildCompleteView(study),
     );
   }
 
@@ -642,6 +644,296 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
             ),
           ],
         ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ★ v4.0: 单词学习界面 — 做完三步测试后展示
+  // ═══════════════════════════════════════════════════════════════════════
+
+  Widget _buildWordDetailView(StudyState study) {
+    final word = study.wordDetailData;
+    if (word == null) return const SizedBox.shrink();
+
+    final wordText = word['word'] as String? ?? '';
+    final phoneticUs = word['phonetic_us'] as String? ?? '';
+    final phoneticUk = word['phonetic_uk'] as String? ?? '';
+    final definitions = word['definitions'] as List? ?? [];
+
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ★ 单词标题区域
+                Center(
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.check_circle_rounded,
+                        color: AppColors.success,
+                        size: 40,
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '单词学习完成！',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.success,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        wordText,
+                        style: const TextStyle(
+                          fontSize: 36,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // 音标
+                      if (phoneticUs.isNotEmpty || phoneticUk.isNotEmpty)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (phoneticUs.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  '美 $phoneticUs',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                            if (phoneticUs.isNotEmpty && phoneticUk.isNotEmpty)
+                              const SizedBox(width: 12),
+                            if (phoneticUk.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  '英 $phoneticUk',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+                const Divider(color: AppColors.divider),
+                const SizedBox(height: 16),
+
+                // ★ 释义列表
+                if (definitions.isNotEmpty) ...[
+                  const Text(
+                    '释义',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...definitions.map<Widget>((def) {
+                    final pos = (def['pos'] as String? ?? '').trim();
+                    final cn = (def['cn'] as String? ?? '').trim();
+                    final meaning = (def['meaning'] as String? ?? '').trim();
+                    final defCn = (def['definition_cn'] as String? ?? '').trim();
+                    final definition = (def['definition'] as String? ?? '').trim();
+                    final example = (def['example'] as String? ?? '').trim();
+                    final exampleCn = (def['example_cn'] as String? ?? '').trim();
+
+                    // 中文释义优先级
+                    String displayCn = '';
+                    if (cn.isNotEmpty) {
+                      displayCn = cn;
+                    } else if (meaning.isNotEmpty && RegExp(r'[\u4e00-\u9fff]').hasMatch(meaning)) {
+                      displayCn = meaning;
+                    } else if (defCn.isNotEmpty) {
+                      displayCn = defCn;
+                    }
+
+                    if (displayCn.isEmpty && definition.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.cardBorder),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 词性 + 释义
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (pos.isNotEmpty) ...[
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      pos,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                                Expanded(
+                                  child: Text(
+                                    displayCn.isNotEmpty ? displayCn : definition,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            // 英文释义
+                            if (definition.isNotEmpty && displayCn.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                definition,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                            // 例句
+                            if (example.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppColors.background,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      example,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        color: AppColors.textPrimary,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                    if (exampleCn.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        exampleCn,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.textSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ],
+
+                // ★ 如果没有释义数据，显示基本信息
+                if (definitions.isEmpty) ...[
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        '暂无详细释义数据',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textHint,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+
+        // ★ 底部按钮
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _selectedOptionIndex = null;
+                  _selectedLetters = [];
+                  _letterUsed = [];
+                });
+                if (study.isComplete) {
+                  Navigator.pop(context);
+                } else {
+                  ref.read(studyProvider.notifier).dismissWordDetail();
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+              ),
+              child: Text(
+                study.isComplete ? '完成学习' : '下一词',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

@@ -552,16 +552,23 @@ _buildWordbookCard(wb),
   }) {
     return Column(
       children: [
-        Icon(icon, color: iconColor, size: 18),
-        const SizedBox(height: 6),
         count == null
             ? const SizedBox(width: 24, height: 24,
                 child: CircularProgressIndicator(strokeWidth: 2))
             : Text('$count',
                 style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: countColor)),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: iconColor, size: 14),
+            const SizedBox(width: 3),
+            Text(label,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+          ],
+        ),
         const SizedBox(height: 2),
-        Text(label,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
         Text(sublabel,
           style: const TextStyle(fontSize: 10, color: AppColors.textHint),
           textAlign: TextAlign.center),
