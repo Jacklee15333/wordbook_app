@@ -28,7 +28,18 @@ logger = logging.getLogger(__name__)
 MEDIA_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "media_storage")
 
 # 预下载状态跟踪
-_preload_status = {"status": "idle", "progress": "", "total": 0, "done": 0, "failed": 0}
+_preload_status = {
+    "status": "idle",
+    "progress": "",
+    "total": 0,
+    "done": 0,
+    "failed": 0,
+    "skipped": 0,
+    "current_word": "",
+    "wordbook_name": "",
+    "start_time": None,
+    "failed_words": [],
+}
 
 
 def _safe_filename(word_text: str) -> str:
@@ -122,11 +133,12 @@ def has_cached_audio(word_text: str, accent: str = "us") -> bool:
     return os.path.isfile(file_path) and os.path.getsize(file_path) > 500
 
 
-async def preload_wordbook_audio(words: list[str], accent: str = "us"):
+async def preload_wordbook_audio(words: list[str], accent: str = "us", wordbook_name: str = ""):
     """
     后台静默预下载词书中所有缺音频的单词。
     """
     import asyncio
+    import time
     global _preload_status
 
     total = len(words)
@@ -134,38 +146,76 @@ async def preload_wordbook_audio(words: list[str], accent: str = "us"):
     need = total - cached
     logger.info(f"[PRELOAD] 开始预下载: 共{total}个, 已缓存{cached}个, 需下载{need}个")
 
-    _preload_status = {"status": "running", "progress": f"0/{need}", "total": need, "done": 0, "failed": 0}
+    _preload_status = {
+        "status": "running",
+        "progress": f"0/{need}",
+        "total": need,
+        "done": 0,
+        "failed": 0,
+        "skipped": cached,
+        "current_word": "",
+        "wordbook_name": wordbook_name,
+        "start_time": time.time(),
+        "failed_words": [],
+    }
 
     if need == 0:
-        _preload_status = {"status": "idle", "progress": "all cached", "total": 0, "done": 0, "failed": 0}
+        _preload_status = {
+            "status": "idle",
+            "progress": "all cached",
+            "total": 0,
+            "done": 0,
+            "failed": 0,
+            "skipped": cached,
+            "current_word": "",
+            "wordbook_name": wordbook_name,
+            "start_time": None,
+            "failed_words": [],
+        }
         return
 
     downloaded = 0
     failed = 0
+    failed_words = []
     for i, word_text in enumerate(words):
         if has_cached_audio(word_text, accent):
             continue
+        _preload_status["current_word"] = word_text
         try:
             result = await get_audio_bytes(word_text, accent)
             if result:
                 downloaded += 1
             else:
                 failed += 1
+                failed_words.append(word_text)
         except Exception as e:
             failed += 1
+            failed_words.append(word_text)
             logger.warning(f"[PRELOAD] 异常 '{word_text}': {e}")
 
         _preload_status["done"] = downloaded
         _preload_status["failed"] = failed
         _preload_status["progress"] = f"{downloaded + failed}/{need}"
+        _preload_status["failed_words"] = failed_words[-20:]  # 只保留最近20个
 
         await asyncio.sleep(0.3)
 
         if (downloaded + failed) % 20 == 0:
             logger.info(f"[PRELOAD] 进度: {downloaded + failed}/{need} (成功{downloaded}, 失败{failed})")
 
-    _preload_status = {"status": "idle", "progress": f"done: {downloaded} ok, {failed} fail", "total": need, "done": downloaded, "failed": failed}
-    logger.info(f"[PRELOAD] 完成: 成功{downloaded}, 失败{failed}")
+    _preload_status = {
+        "status": "idle",
+        "progress": f"done: {downloaded} ok, {failed} fail",
+        "total": need,
+        "done": downloaded,
+        "failed": failed,
+        "skipped": cached,
+        "current_word": "",
+        "wordbook_name": wordbook_name,
+        "start_time": None,
+        "failed_words": failed_words[-20:],
+    }
+    logger.info(f"[PRELOAD] 完成: 成功{downloaded}, 失败{failed})")
 
 
 def get_preload_status() -> dict:

@@ -784,8 +784,86 @@
                 <div class="value" id="media-total-size">-</div>
             </div>
             <div class="stat-card">
-                <div class="label">预下载状态</div>
+                <div class="label">下载状态</div>
                 <div class="value" id="media-preload-status" style="font-size:14px;">-</div>
+            </div>
+        </div>
+
+        <!-- Download Progress Panel (shown when downloading) -->
+        <div id="media-download-panel" style="display:none; margin-bottom:20px;">
+            <div class="table-container">
+                <div class="table-toolbar" style="background:var(--primary-bg); border-bottom:2px solid var(--primary);">
+                    <h3 style="color:var(--primary);">
+                        <span class="spinner" style="width:16px;height:16px;border-width:2px;vertical-align:middle;margin-right:8px;"></span>
+                        正在下载音频 — <span id="dl-wordbook-name">-</span>
+                    </h3>
+                    <div class="toolbar-actions">
+                        <span id="dl-elapsed" style="font-size:12px;color:var(--gray-500);">已用时: 0秒</span>
+                    </div>
+                </div>
+                <div style="padding:20px;">
+                    <!-- Progress bar -->
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+                        <div style="flex:1;height:12px;background:var(--gray-200);border-radius:6px;overflow:hidden;position:relative;">
+                            <div id="dl-progress-bar" style="width:0%;height:100%;border-radius:6px;transition:width 0.5s ease;background:linear-gradient(90deg, var(--primary), var(--primary-light));"></div>
+                        </div>
+                        <span id="dl-progress-pct" style="font-size:18px;font-weight:700;color:var(--primary);min-width:50px;text-align:right;">0%</span>
+                    </div>
+                    <!-- Stats row -->
+                    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px;">
+                        <div style="text-align:center;padding:10px;background:var(--gray-50);border-radius:8px;">
+                            <div style="font-size:11px;color:var(--gray-500);">待下载</div>
+                            <div id="dl-total" style="font-size:20px;font-weight:700;color:var(--gray-800);">0</div>
+                        </div>
+                        <div style="text-align:center;padding:10px;background:var(--success-bg);border-radius:8px;">
+                            <div style="font-size:11px;color:var(--success);">已下载</div>
+                            <div id="dl-done" style="font-size:20px;font-weight:700;color:var(--success);">0</div>
+                        </div>
+                        <div style="text-align:center;padding:10px;background:var(--danger-bg);border-radius:8px;">
+                            <div style="font-size:11px;color:var(--danger);">失败</div>
+                            <div id="dl-failed" style="font-size:20px;font-weight:700;color:var(--danger);">0</div>
+                        </div>
+                        <div style="text-align:center;padding:10px;background:var(--gray-50);border-radius:8px;">
+                            <div style="font-size:11px;color:var(--gray-500);">已跳过(有缓存)</div>
+                            <div id="dl-skipped" style="font-size:20px;font-weight:700;color:var(--gray-600);">0</div>
+                        </div>
+                        <div style="text-align:center;padding:10px;background:var(--primary-bg);border-radius:8px;">
+                            <div style="font-size:11px;color:var(--primary);">下载速度</div>
+                            <div id="dl-speed" style="font-size:20px;font-weight:700;color:var(--primary);">-</div>
+                        </div>
+                    </div>
+                    <!-- Current word -->
+                    <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--gray-50);border-radius:8px;border-left:3px solid var(--primary);">
+                        <span style="font-size:12px;color:var(--gray-500);white-space:nowrap;">正在下载:</span>
+                        <span id="dl-current-word" style="font-size:14px;font-weight:600;color:var(--primary);">等待中...</span>
+                    </div>
+                    <!-- Failed words list -->
+                    <div id="dl-failed-words-section" style="display:none;margin-top:12px;">
+                        <div style="font-size:12px;color:var(--danger);font-weight:500;margin-bottom:6px;">下载失败的单词:</div>
+                        <div id="dl-failed-words-list" style="font-size:12px;color:var(--gray-600);padding:8px 12px;background:var(--danger-bg);border-radius:6px;max-height:80px;overflow-y:auto;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Download complete panel (shown after download finishes) -->
+        <div id="media-complete-panel" style="display:none; margin-bottom:20px;">
+            <div class="table-container">
+                <div class="table-toolbar" style="background:var(--success-bg); border-bottom:2px solid var(--success);">
+                    <h3 style="color:var(--success);">✅ 下载完成 — <span id="cpl-wordbook-name">-</span></h3>
+                    <button class="btn btn-sm btn-outline" onclick="document.getElementById('media-complete-panel').style.display='none'">关闭</button>
+                </div>
+                <div style="padding:16px 20px;">
+                    <div style="display:flex;gap:20px;font-size:14px;">
+                        <span>成功: <strong id="cpl-done" style="color:var(--success);">0</strong></span>
+                        <span>失败: <strong id="cpl-failed" style="color:var(--danger);">0</strong></span>
+                        <span>耗时: <strong id="cpl-elapsed" style="color:var(--gray-600);">0秒</strong></span>
+                    </div>
+                    <div id="cpl-failed-words-section" style="display:none;margin-top:10px;">
+                        <div style="font-size:12px;color:var(--danger);font-weight:500;margin-bottom:4px;">失败列表:</div>
+                        <div id="cpl-failed-words-list" style="font-size:12px;color:var(--gray-600);padding:6px 10px;background:var(--danger-bg);border-radius:6px;max-height:60px;overflow-y:auto;"></div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1593,6 +1671,10 @@ function renderPagination(containerId, data, onPageClick) {
 }
 
 // ==================== Media Resources ====================
+let mediaPollingInterval = null;
+let lastPreloadStatus = 'idle';
+let lastCompletionData = null;
+
 async function loadMediaStatus() {
     try {
         const data = await api(`${API_V1}/media-admin/status`);
@@ -1600,9 +1682,36 @@ async function loadMediaStatus() {
         document.getElementById('media-audio-us').textContent = data.audio_us_count + ' files';
         document.getElementById('media-audio-uk').textContent = data.audio_uk_count + ' files';
         document.getElementById('media-total-size').textContent = formatSize(data.total_size_bytes);
-        document.getElementById('media-preload-status').textContent = data.preload_status || 'idle';
-        document.getElementById('media-preload-status').style.color =
-            data.preload_status === 'running' ? 'var(--warning)' : 'var(--success)';
+
+        // Preload status display
+        const statusEl = document.getElementById('media-preload-status');
+        const isRunning = data.preload_status === 'running';
+        const statusMap = {
+            'idle': '空闲',
+            'running': '下载中...',
+            'error': '错误',
+        };
+        statusEl.textContent = statusMap[data.preload_status] || data.preload_status;
+        statusEl.style.color = isRunning ? 'var(--warning)' : 'var(--success)';
+
+        // Handle download progress panel
+        const downloadPanel = document.getElementById('media-download-panel');
+        const completePanel = document.getElementById('media-complete-panel');
+
+        if (isRunning) {
+            downloadPanel.style.display = 'block';
+            completePanel.style.display = 'none';
+            updateDownloadProgress(data);
+            startMediaPolling();
+        } else {
+            downloadPanel.style.display = 'none';
+            // Show completion panel if just finished
+            if (lastPreloadStatus === 'running' && data.preload_status === 'idle') {
+                showCompletionPanel(data);
+            }
+            stopMediaPolling();
+        }
+        lastPreloadStatus = data.preload_status;
 
         // Wordbooks list
         const tbody = document.getElementById('media-wordbooks-tbody');
@@ -1610,6 +1719,10 @@ async function loadMediaStatus() {
             tbody.innerHTML = data.wordbooks.map(wb => {
                 const pct = wb.total > 0 ? Math.round(wb.cached / wb.total * 100) : 0;
                 const barColor = pct === 100 ? 'var(--success)' : pct > 50 ? 'var(--warning)' : 'var(--danger)';
+                const btnDisabled = pct === 100 || isRunning;
+                const btnText = pct === 100 ? '已完成' : '下载音频';
+                const btnClass = pct === 100 ? 'btn-outline' : (isRunning ? 'btn-outline' : 'btn-primary');
+                const btnExtra = btnDisabled ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : '';
                 return `<tr>
                     <td><strong>${escapeHtml(wb.name)}</strong></td>
                     <td>${wb.total}</td>
@@ -1623,15 +1736,14 @@ async function loadMediaStatus() {
                         </div>
                     </td>
                     <td>
-                        <button class="btn btn-sm btn-primary" onclick="preloadWordbook('${wb.id}')"
-                            ${pct === 100 ? 'disabled style="opacity:0.5"' : ''}>
-                            ${pct === 100 ? 'done' : 'preload'}
+                        <button class="btn btn-sm ${btnClass}" onclick="preloadWordbook('${wb.id}', '${escapeHtml(wb.name)}')" ${btnExtra}>
+                            ${isRunning && !btnDisabled ? '<span class="spinner" style="width:12px;height:12px;border-width:2px;"></span> 等待中' : btnText}
                         </button>
                     </td>
                 </tr>`;
             }).join('');
         } else {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--gray-400);">no wordbooks</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--gray-400);">暂无词书</td></tr>';
         }
 
         // Files list
@@ -1644,22 +1756,117 @@ async function loadMediaStatus() {
                 </div>`
             ).join('');
         } else {
-            filesList.innerHTML = '<div style="color:var(--gray-400);text-align:center;">no cached files yet</div>';
+            filesList.innerHTML = '<div style="color:var(--gray-400);text-align:center;">暂无缓存文件</div>';
         }
 
     } catch (e) {
-        toast('failed to load media status: ' + e.message, 'error');
+        toast('加载媒体状态失败: ' + e.message, 'error');
     }
 }
 
-async function preloadWordbook(wordbookId) {
+function updateDownloadProgress(data) {
+    const total = data.preload_total || 0;
+    const done = data.preload_done || 0;
+    const failed = data.preload_failed || 0;
+    const processed = done + failed;
+    const pct = total > 0 ? Math.round(processed / total * 100) : 0;
+    const elapsed = data.preload_elapsed_seconds || 0;
+
+    document.getElementById('dl-wordbook-name').textContent = data.preload_wordbook_name || '-';
+    document.getElementById('dl-progress-bar').style.width = pct + '%';
+    document.getElementById('dl-progress-pct').textContent = pct + '%';
+    document.getElementById('dl-total').textContent = total;
+    document.getElementById('dl-done').textContent = done;
+    document.getElementById('dl-failed').textContent = failed;
+    document.getElementById('dl-skipped').textContent = data.preload_skipped || 0;
+    document.getElementById('dl-current-word').textContent = data.preload_current_word || '等待中...';
+    document.getElementById('dl-elapsed').textContent = '已用时: ' + formatElapsed(elapsed);
+
+    // Speed calculation
+    const speed = elapsed > 0 ? (processed / elapsed * 60).toFixed(1) : '-';
+    document.getElementById('dl-speed').textContent = elapsed > 0 ? speed + '/分' : '-';
+
+    // Failed words
+    const failedWords = data.preload_failed_words || [];
+    const failedSection = document.getElementById('dl-failed-words-section');
+    if (failedWords.length > 0) {
+        failedSection.style.display = 'block';
+        document.getElementById('dl-failed-words-list').textContent = failedWords.join(', ');
+    } else {
+        failedSection.style.display = 'none';
+    }
+}
+
+function showCompletionPanel(data) {
+    const completePanel = document.getElementById('media-complete-panel');
+    completePanel.style.display = 'block';
+    document.getElementById('cpl-wordbook-name').textContent = data.preload_wordbook_name || '-';
+    document.getElementById('cpl-done').textContent = data.preload_done || 0;
+    document.getElementById('cpl-failed').textContent = data.preload_failed || 0;
+
+    const elapsed = data.preload_elapsed_seconds || 0;
+    document.getElementById('cpl-elapsed').textContent = formatElapsed(elapsed);
+
+    const failedWords = data.preload_failed_words || [];
+    const failedSection = document.getElementById('cpl-failed-words-section');
+    if (failedWords.length > 0) {
+        failedSection.style.display = 'block';
+        document.getElementById('cpl-failed-words-list').textContent = failedWords.join(', ');
+    } else {
+        failedSection.style.display = 'none';
+    }
+}
+
+function formatElapsed(seconds) {
+    if (seconds < 60) return seconds + '秒';
+    const min = Math.floor(seconds / 60);
+    const sec = seconds % 60;
+    return min + '分' + sec + '秒';
+}
+
+function startMediaPolling() {
+    if (mediaPollingInterval) return; // Already polling
+    mediaPollingInterval = setInterval(async () => {
+        try {
+            await loadMediaStatus();
+        } catch (e) {
+            console.error('Media poll error:', e);
+        }
+    }, 2000);
+}
+
+function stopMediaPolling() {
+    if (mediaPollingInterval) {
+        clearInterval(mediaPollingInterval);
+        mediaPollingInterval = null;
+    }
+}
+
+async function preloadWordbook(wordbookId, wordbookName) {
     try {
         const data = await api(`${API_V1}/media-admin/preload/${wordbookId}`, { method: 'POST' });
-        toast(`preload started: ${data.total_words} words`, 'success');
-        // Auto-refresh status after 3s
-        setTimeout(loadMediaStatus, 3000);
+
+        if (data.already_running) {
+            toast('已有下载任务正在进行中，请等待完成', 'info');
+            return;
+        }
+
+        toast(`开始下载「${wordbookName || ''}」音频: ${data.total_words} 个单词`, 'success');
+        lastPreloadStatus = 'running';
+
+        // Immediately show download panel and start polling
+        document.getElementById('media-download-panel').style.display = 'block';
+        document.getElementById('media-complete-panel').style.display = 'none';
+        document.getElementById('dl-wordbook-name').textContent = wordbookName || data.wordbook_name || '-';
+        document.getElementById('dl-progress-bar').style.width = '0%';
+        document.getElementById('dl-progress-pct').textContent = '0%';
+        document.getElementById('dl-current-word').textContent = '正在启动...';
+
+        startMediaPolling();
+        // Also do a fresh reload after 1s to get initial data
+        setTimeout(loadMediaStatus, 1000);
     } catch (e) {
-        toast('preload failed: ' + e.message, 'error');
+        toast('下载启动失败: ' + e.message, 'error');
     }
 }
 

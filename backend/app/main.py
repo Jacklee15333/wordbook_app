@@ -308,9 +308,24 @@ async def media_status_v45(db: AsyncSession = Depends(get_db)):
             import traceback as _tb
             _tb.print_exc()
 
+        # Calculate elapsed time if running
+        elapsed_seconds = 0
+        if preload.get("start_time"):
+            import time
+            elapsed_seconds = int(time.time() - preload["start_time"])
+
         result = {
-            **stats, "preload_status": preload.get("status", "idle"),
+            **stats,
+            "preload_status": preload.get("status", "idle"),
             "preload_progress": preload.get("progress", ""),
+            "preload_total": preload.get("total", 0),
+            "preload_done": preload.get("done", 0),
+            "preload_failed": preload.get("failed", 0),
+            "preload_skipped": preload.get("skipped", 0),
+            "preload_current_word": preload.get("current_word", ""),
+            "preload_wordbook_name": preload.get("wordbook_name", ""),
+            "preload_elapsed_seconds": elapsed_seconds,
+            "preload_failed_words": preload.get("failed_words", []),
             "wordbooks": wordbooks_info,
         }
         logger.info(f"[MEDIA-v4.6] returning {len(wordbooks_info)} wordbooks")
@@ -323,6 +338,10 @@ async def media_status_v45(db: AsyncSession = Depends(get_db)):
             "audio_us_count": 0, "audio_uk_count": 0, "total_size_bytes": 0,
             "recent_files": [], "preload_status": "error",
             "preload_progress": str(e), "wordbooks": [],
+            "preload_total": 0, "preload_done": 0, "preload_failed": 0,
+            "preload_skipped": 0, "preload_current_word": "",
+            "preload_wordbook_name": "", "preload_elapsed_seconds": 0,
+            "preload_failed_words": [],
         })
 
 @app.post("/api/v1/media-admin/preload/{wordbook_id}")
@@ -334,9 +353,21 @@ async def media_preload_v45(
     """media preload - v4.6"""
     logger.info(f"[MEDIA-v4.6] === /media-admin/preload called: {wordbook_id} ===")
     try:
-        from app.services.media_service import preload_wordbook_audio
+        from app.services.media_service import preload_wordbook_audio, get_preload_status
         import uuid as _u
+
+        # Check if already running
+        current_status = get_preload_status()
+        if current_status.get("status") == "running":
+            return {"message": "已有下载任务正在进行中，请等待完成", "total_words": 0, "version": "v4.6", "already_running": True}
+
         wb_uuid = _u.UUID(str(wordbook_id).strip())
+
+        # Get wordbook name
+        wb_result = await db.execute(select(Wordbook).where(Wordbook.id == wb_uuid))
+        wb = wb_result.scalars().first()
+        wb_name = wb.name if wb else "unknown"
+
         result = await db.execute(
             select(Word.word)
             .join(WordbookWord, Word.id == WordbookWord.word_id)
@@ -345,8 +376,8 @@ async def media_preload_v45(
         words = [r[0] for r in result.all()]
         logger.info(f"[MEDIA-v4.6] preload: {len(words)} words found")
         if words:
-            background_tasks.add_task(preload_wordbook_audio, words, "us")
-        return {"message": "preload started", "total_words": len(words), "version": "v4.6"}
+            background_tasks.add_task(preload_wordbook_audio, words, "us", wb_name)
+        return {"message": "preload started", "total_words": len(words), "version": "v4.6", "wordbook_name": wb_name}
     except Exception as e:
         logger.error(f"[MEDIA-v4.6] preload error: {e}")
         import traceback as _tb
