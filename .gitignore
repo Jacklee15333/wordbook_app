@@ -10,6 +10,9 @@ venv/
 # 生成的数据文件
 scripts/generated_words.json
 
+# 单词多媒体资源库（音频/图片/视频缓存，太大不上传）
+backend/media_storage/
+
 # IDE
 .vscode/
 .idea/
