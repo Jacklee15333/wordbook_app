@@ -16,7 +16,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
-from app.models.word import Wordbook
+from app.models.word import Wordbook, Word, WordbookWord
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ settings = get_settings()
 app = FastAPI(
     title="WordBook API v3",
     description="WordBook API with batch import",
-    version="3.0.0",
+    version="4.6.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -43,7 +43,12 @@ app.add_middleware(
 # ===== 诊断端点（直接在 app 上） =====
 @app.get("/ping")
 async def ping():
-    return {"pong": True, "version": "3.0.0"}
+    return {"pong": True, "version": "4.6.0"}
+
+@app.get("/api/v1/media-test")
+async def media_test():
+    """Dead simple test - no imports, no DB"""
+    return {"ok": True, "msg": "media-test works", "version": "4.6.0"}
 
 
 @app.get("/test/{some_id}/action")
@@ -261,13 +266,92 @@ except Exception as e:
     logger.error(f"FAIL admin: {e}")
     traceback.print_exc()
 
+# NOTE: media router kept for /media/{word_id}/audio only
 try:
     from app.api.media import router as media_router
     app.include_router(media_router, prefix="/api/v1")
-    logger.info("OK media")
+    logger.info("OK media (audio endpoint)")
 except Exception as e:
-    logger.error(f"FAIL media: {e}")
-    traceback.print_exc()
+    logger.warning(f"media router skipped: {e}")
+
+# ===== v4.6 media-admin endpoints (separate path, no router conflict) =====
+from fastapi.responses import JSONResponse as _JSONResponse, Response as _Response
+
+@app.get("/api/v1/media-admin/status")
+async def media_status_v45(db: AsyncSession = Depends(get_db)):
+    """media status - v4.6"""
+    logger.info("[MEDIA-v4.6] === /media-admin/status called ===")
+    try:
+        from app.services.media_service import get_cache_stats, get_preload_status, has_cached_audio
+        logger.info("[MEDIA-v4.6] imports OK")
+        stats = get_cache_stats()
+        preload = get_preload_status()
+        logger.info(f"[MEDIA-v4.6] stats={stats['audio_us_count']} files, preload={preload.get('status')}")
+
+        wordbooks_info = []
+        try:
+            wb_result = await db.execute(select(Wordbook).order_by(Wordbook.name))
+            for wb in wb_result.scalars().all():
+                words_result = await db.execute(
+                    select(Word.word)
+                    .join(WordbookWord, Word.id == WordbookWord.word_id)
+                    .where(WordbookWord.wordbook_id == wb.id)
+                )
+                words = [r[0] for r in words_result.all()]
+                cached = sum(1 for w in words if has_cached_audio(w))
+                wordbooks_info.append({
+                    "id": str(wb.id), "name": wb.name or "unnamed",
+                    "total": len(words), "cached": cached,
+                })
+        except Exception as e:
+            logger.warning(f"[MEDIA-v4.6] wordbook query: {e}")
+            import traceback as _tb
+            _tb.print_exc()
+
+        result = {
+            **stats, "preload_status": preload.get("status", "idle"),
+            "preload_progress": preload.get("progress", ""),
+            "wordbooks": wordbooks_info,
+        }
+        logger.info(f"[MEDIA-v4.6] returning {len(wordbooks_info)} wordbooks")
+        return _JSONResponse(content=result)
+    except Exception as e:
+        logger.error(f"[MEDIA-v4.6] status error: {e}")
+        import traceback as _tb
+        _tb.print_exc()
+        return _JSONResponse(content={
+            "audio_us_count": 0, "audio_uk_count": 0, "total_size_bytes": 0,
+            "recent_files": [], "preload_status": "error",
+            "preload_progress": str(e), "wordbooks": [],
+        })
+
+@app.post("/api/v1/media-admin/preload/{wordbook_id}")
+async def media_preload_v45(
+    wordbook_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """media preload - v4.6"""
+    logger.info(f"[MEDIA-v4.6] === /media-admin/preload called: {wordbook_id} ===")
+    try:
+        from app.services.media_service import preload_wordbook_audio
+        import uuid as _u
+        wb_uuid = _u.UUID(str(wordbook_id).strip())
+        result = await db.execute(
+            select(Word.word)
+            .join(WordbookWord, Word.id == WordbookWord.word_id)
+            .where(WordbookWord.wordbook_id == wb_uuid)
+        )
+        words = [r[0] for r in result.all()]
+        logger.info(f"[MEDIA-v4.6] preload: {len(words)} words found")
+        if words:
+            background_tasks.add_task(preload_wordbook_audio, words, "us")
+        return {"message": "preload started", "total_words": len(words), "version": "v4.6"}
+    except Exception as e:
+        logger.error(f"[MEDIA-v4.6] preload error: {e}")
+        import traceback as _tb
+        _tb.print_exc()
+        return {"message": str(e), "total_words": 0}
 
 
 # ===== 固定端点 =====
@@ -281,7 +365,7 @@ async def admin_page():
 
 @app.get("/")
 async def root():
-    return {"app": "WordBook API", "version": "3.0.0"}
+    return {"app": "WordBook API", "version": "4.6.0"}
 
 
 @app.get("/health")
@@ -292,7 +376,7 @@ async def health_check():
 @app.on_event("startup")
 async def startup_event():
     logger.info("=" * 50)
-    logger.info("ROUTE LIST v3.0.0:")
+    logger.info("ROUTE LIST v4.6.0 (media-direct):")
     for route in app.routes:
         if hasattr(route, 'methods') and hasattr(route, 'path'):
             methods = ','.join(route.methods)

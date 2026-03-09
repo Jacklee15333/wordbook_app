@@ -107,6 +107,16 @@ class ApiService {
     return r.data;
   }
 
+  /// ★ v4.5: 触发后台静默预下载词书音频
+  Future<void> preloadWordbookAudio(String wordbookId) async {
+    try {
+      await _dio.post('/media-admin/preload/$wordbookId');
+      debugPrint('[API] 🔊 音频预下载已触发: $wordbookId');
+    } catch (_) {
+      // 静默失败，不影响主流程
+    }
+  }
+
   Future<Map<String, dynamic>> submitReview({
     required String wordId,
     required int rating,

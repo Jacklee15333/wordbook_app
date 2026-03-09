@@ -623,6 +623,11 @@ class StudyNotifier extends StateNotifier<StudyState> {
       );
 
       _generateNextQuestion();
+
+      // ★ v4.5: 静默预下载词书音频（后台运行，不影响主流程）
+      if (_wordbookId != null) {
+        _api.preloadWordbookAudio(_wordbookId!);
+      }
     } catch (e) {
       _log('❌ 加载失败: $e');
       state = StudyState(

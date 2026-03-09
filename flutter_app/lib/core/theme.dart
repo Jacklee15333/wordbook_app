@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
@@ -117,5 +117,5 @@ class AppTheme {
 }
 
 class ApiConfig {
-  static const String baseUrl = 'http://localhost:8000/api/v1';
+  static const String baseUrl = 'http://localhost:8001/api/v1';
 }

@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 # 资源根目录（backend/media_storage/）
 MEDIA_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "media_storage")
 
+# 预下载状态跟踪
+_preload_status = {"status": "idle", "progress": "", "total": 0, "done": 0, "failed": 0}
+
 
 def _safe_filename(word_text: str) -> str:
     """将单词/短语转为安全的文件名"""
@@ -109,3 +112,100 @@ async def get_audio_bytes(word_text: str, accent: str = "us") -> bytes | None:
         logger.warning(f"[MEDIA] 缓存写入失败: {e}")
 
     return audio_bytes
+
+
+def has_cached_audio(word_text: str, accent: str = "us") -> bool:
+    """检查某个单词是否已有缓存音频"""
+    media_dir = _get_media_dir(accent)
+    filename = f"{_safe_filename(word_text)}.mp3"
+    file_path = os.path.join(media_dir, filename)
+    return os.path.isfile(file_path) and os.path.getsize(file_path) > 500
+
+
+async def preload_wordbook_audio(words: list[str], accent: str = "us"):
+    """
+    后台静默预下载词书中所有缺音频的单词。
+    """
+    import asyncio
+    global _preload_status
+
+    total = len(words)
+    cached = sum(1 for w in words if has_cached_audio(w, accent))
+    need = total - cached
+    logger.info(f"[PRELOAD] 开始预下载: 共{total}个, 已缓存{cached}个, 需下载{need}个")
+
+    _preload_status = {"status": "running", "progress": f"0/{need}", "total": need, "done": 0, "failed": 0}
+
+    if need == 0:
+        _preload_status = {"status": "idle", "progress": "all cached", "total": 0, "done": 0, "failed": 0}
+        return
+
+    downloaded = 0
+    failed = 0
+    for i, word_text in enumerate(words):
+        if has_cached_audio(word_text, accent):
+            continue
+        try:
+            result = await get_audio_bytes(word_text, accent)
+            if result:
+                downloaded += 1
+            else:
+                failed += 1
+        except Exception as e:
+            failed += 1
+            logger.warning(f"[PRELOAD] 异常 '{word_text}': {e}")
+
+        _preload_status["done"] = downloaded
+        _preload_status["failed"] = failed
+        _preload_status["progress"] = f"{downloaded + failed}/{need}"
+
+        await asyncio.sleep(0.3)
+
+        if (downloaded + failed) % 20 == 0:
+            logger.info(f"[PRELOAD] 进度: {downloaded + failed}/{need} (成功{downloaded}, 失败{failed})")
+
+    _preload_status = {"status": "idle", "progress": f"done: {downloaded} ok, {failed} fail", "total": need, "done": downloaded, "failed": failed}
+    logger.info(f"[PRELOAD] 完成: 成功{downloaded}, 失败{failed}")
+
+
+def get_preload_status() -> dict:
+    """获取当前预下载状态"""
+    return dict(_preload_status)
+
+
+def get_cache_stats() -> dict:
+    """获取本地缓存统计"""
+    us_dir = _get_media_dir("us")
+    uk_dir = _get_media_dir("uk")
+
+    us_files = []
+    uk_files = []
+    total_size = 0
+
+    if os.path.isdir(us_dir):
+        for f in os.listdir(us_dir):
+            fp = os.path.join(us_dir, f)
+            if os.path.isfile(fp):
+                sz = os.path.getsize(fp)
+                us_files.append({"name": f"us/{f}", "size": sz})
+                total_size += sz
+
+    if os.path.isdir(uk_dir):
+        for f in os.listdir(uk_dir):
+            fp = os.path.join(uk_dir, f)
+            if os.path.isfile(fp):
+                sz = os.path.getsize(fp)
+                uk_files.append({"name": f"uk/{f}", "size": sz})
+                total_size += sz
+
+    # 按时间倒序，最新的在前
+    all_files = us_files + uk_files
+    all_files.sort(key=lambda x: x["name"])
+
+    return {
+        "audio_us_count": len(us_files),
+        "audio_uk_count": len(uk_files),
+        "total_size_bytes": total_size,
+        "recent_files": all_files[:50],  # 最多显示 50 个
+    }
+

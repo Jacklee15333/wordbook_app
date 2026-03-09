@@ -538,6 +538,10 @@
             <span class="icon">📝</span>
             <span>处理日志</span>
         </div>
+        <div class="nav-item" data-section="media">
+            <span class="icon">🔊</span>
+            <span>媒体资源库</span>
+        </div>
     </nav>
 </div>
 
@@ -758,6 +762,69 @@
         </div>
     </div>
 
+    <!-- ==================== Media Resources Section ==================== -->
+    <div id="section-media" class="section">
+        <div class="page-header">
+            <h2>媒体资源库</h2>
+            <p>管理单词音频、图片、视频等多媒体资源</p>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+            <div class="stat-card">
+                <div class="label">美音缓存</div>
+                <div class="value" id="media-audio-us">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">英音缓存</div>
+                <div class="value" id="media-audio-uk">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">缓存总大小</div>
+                <div class="value" id="media-total-size">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">预下载状态</div>
+                <div class="value" id="media-preload-status" style="font-size:14px;">-</div>
+            </div>
+        </div>
+
+        <!-- Wordbook preload -->
+        <div class="table-container" style="margin-top:20px;">
+            <div class="table-toolbar">
+                <h3>词书音频预下载</h3>
+                <div class="toolbar-actions">
+                    <button class="btn btn-outline" onclick="loadMediaStatus()">刷新</button>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>词书名称</th>
+                        <th>单词数</th>
+                        <th>已缓存</th>
+                        <th>覆盖率</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="media-wordbooks-tbody">
+                    <tr><td colspan="5" class="loading"><div class="spinner"></div></td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Recent downloads -->
+        <div class="table-container" style="margin-top:20px;">
+            <div class="table-toolbar">
+                <h3>本地缓存文件</h3>
+                <p style="font-size:12px; color:var(--gray-500); margin-left:12px;">位置: backend/media_storage/audio/</p>
+            </div>
+            <div id="media-files-list" style="padding:16px; max-height:300px; overflow-y:auto; font-family:monospace; font-size:13px; color:var(--gray-600);">
+                加载中...
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <!-- Toast Container -->
@@ -883,6 +950,7 @@ function switchSection(section) {
         case 'users': loadUsers(); break;
         case 'vocabulary': loadVocabulary(); break;
         case 'import-logs': loadImportTasks(); break;
+        case 'media': loadMediaStatus(); break;
     }
 }
 
@@ -1522,6 +1590,92 @@ function renderPagination(containerId, data, onPageClick) {
     container.querySelectorAll('button[data-page]').forEach(btn => {
         btn.addEventListener('click', () => onPageClick(parseInt(btn.dataset.page)));
     });
+}
+
+// ==================== Media Resources ====================
+async function loadMediaStatus() {
+    try {
+        const data = await api(`${API_V1}/media-admin/status`);
+
+        document.getElementById('media-audio-us').textContent = data.audio_us_count + ' files';
+        document.getElementById('media-audio-uk').textContent = data.audio_uk_count + ' files';
+        document.getElementById('media-total-size').textContent = formatSize(data.total_size_bytes);
+        document.getElementById('media-preload-status').textContent = data.preload_status || 'idle';
+        document.getElementById('media-preload-status').style.color =
+            data.preload_status === 'running' ? 'var(--warning)' : 'var(--success)';
+
+        // Wordbooks list
+        const tbody = document.getElementById('media-wordbooks-tbody');
+        if (data.wordbooks && data.wordbooks.length > 0) {
+            tbody.innerHTML = data.wordbooks.map(wb => {
+                const pct = wb.total > 0 ? Math.round(wb.cached / wb.total * 100) : 0;
+                const barColor = pct === 100 ? 'var(--success)' : pct > 50 ? 'var(--warning)' : 'var(--danger)';
+                return `<tr>
+                    <td><strong>${escapeHtml(wb.name)}</strong></td>
+                    <td>${wb.total}</td>
+                    <td>${wb.cached}</td>
+                    <td>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <div style="flex:1;height:6px;background:var(--gray-200);border-radius:3px;overflow:hidden;">
+                                <div style="width:${pct}%;height:100%;background:${barColor};border-radius:3px;"></div>
+                            </div>
+                            <span style="font-size:12px;font-weight:600;color:${barColor};">${pct}%</span>
+                        </div>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-primary" onclick="preloadWordbook('${wb.id}')"
+                            ${pct === 100 ? 'disabled style="opacity:0.5"' : ''}>
+                            ${pct === 100 ? 'done' : 'preload'}
+                        </button>
+                    </td>
+                </tr>`;
+            }).join('');
+        } else {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--gray-400);">no wordbooks</td></tr>';
+        }
+
+        // Files list
+        const filesList = document.getElementById('media-files-list');
+        if (data.recent_files && data.recent_files.length > 0) {
+            filesList.innerHTML = data.recent_files.map(f =>
+                `<div style="padding:3px 0;border-bottom:1px solid var(--gray-200);">
+                    <span style="color:var(--primary);">${escapeHtml(f.name)}</span>
+                    <span style="float:right;color:var(--gray-400);">${formatSize(f.size)}</span>
+                </div>`
+            ).join('');
+        } else {
+            filesList.innerHTML = '<div style="color:var(--gray-400);text-align:center;">no cached files yet</div>';
+        }
+
+    } catch (e) {
+        toast('failed to load media status: ' + e.message, 'error');
+    }
+}
+
+async function preloadWordbook(wordbookId) {
+    try {
+        const data = await api(`${API_V1}/media-admin/preload/${wordbookId}`, { method: 'POST' });
+        toast(`preload started: ${data.total_words} words`, 'success');
+        // Auto-refresh status after 3s
+        setTimeout(loadMediaStatus, 3000);
+    } catch (e) {
+        toast('preload failed: ' + e.message, 'error');
+    }
+}
+
+function formatSize(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let i = 0;
+    let size = bytes;
+    while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+    return size.toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
 }
 
 // ==================== Init ====================
