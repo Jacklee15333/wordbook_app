@@ -1,8 +1,9 @@
 // ╔═══════════════════════════════════════════════════════════════════════╗
-// ║  study_screen.dart  v3.2  2026-03-02                                ║
-// ║  v3.2: 拼写改为音节块拼接                                            ║
+// ║  study_screen.dart  v4.4  2026-03-09                                ║
+// ║  v4.4: 浏览器原生Audio播放 + 后端资源库 + 自动朗读                   ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
 
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme.dart';
@@ -20,6 +21,71 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   List<bool> _letterUsed = [];
   int? _selectedOptionIndex;
   bool _isAnimating = false;
+
+  // ★ v4.4: 浏览器原生 Audio 播放 — 最可靠
+  html.AudioElement? _audioElement;
+  bool _isPlaying = false;
+  String _lastAutoPlayedKey = '';
+
+  @override
+  void dispose() {
+    _audioElement?.pause();
+    _audioElement = null;
+    super.dispose();
+  }
+
+  /// 播放单词发音（通过后端 /media/{word_id}/audio 接口）
+  Future<void> _playWord(String wordId, {String accent = 'us'}) async {
+    if (_isPlaying || wordId.isEmpty) return;
+    setState(() => _isPlaying = true);
+    try {
+      final url = '${ApiConfig.baseUrl}/media/$wordId/audio?accent=$accent';
+      // 停掉上一个
+      _audioElement?.pause();
+      // 创建新的 Audio 元素
+      _audioElement = html.AudioElement(url);
+      _audioElement!.onEnded.listen((_) {
+        if (mounted) setState(() => _isPlaying = false);
+      });
+      _audioElement!.onError.listen((_) {
+        debugPrint('[AUDIO] 播放失败: $url');
+        if (mounted) setState(() => _isPlaying = false);
+      });
+      await _audioElement!.play();
+    } catch (e) {
+      debugPrint('[AUDIO] 异常: $e');
+      if (mounted) setState(() => _isPlaying = false);
+    }
+  }
+
+  /// 自动播放 — 仅当 key 变化时触发
+  void _autoPlay(String key, String wordId) {
+    if (key == _lastAutoPlayedKey || wordId.isEmpty) return;
+    _lastAutoPlayedKey = key;
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) _playWord(wordId);
+    });
+  }
+
+  /// 构建发音按钮
+  Widget _buildPlayButton(String wordId, {double size = 36, String accent = 'us'}) {
+    return GestureDetector(
+      onTap: () => _playWord(wordId, accent: accent),
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: AppColors.primary.withOpacity(0.1),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          _isPlaying ? Icons.volume_up_rounded : Icons.volume_up_outlined,
+          color: AppColors.primary,
+          size: size * 0.55,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +130,16 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
 
   Widget _buildQuestionView(StudyState study) {
     final question = study.currentQuestion!;
+
+    // ★ v4.3: 自动播放 — 英→汉时单词出现自动读
+    if (question.step == TestStep.enToCn && !study.isShowingResult) {
+      _autoPlay('q_${question.wordId}_${question.step.name}', question.wordId);
+    }
+    // ★ v4.3: 答题结果出现时也自动读一遍
+    if (study.isShowingResult && study.lastResult != null) {
+      _autoPlay('r_${question.wordId}_${question.step.name}', question.wordId);
+    }
+
     return Column(
       children: [
         _buildStepIndicator(question.step),
@@ -184,6 +260,11 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                     color: AppColors.textSecondary,
                   ),
                 ),
+              ],
+              // ★ v4.3: 英→汉显示英文时加发音按钮
+              if (isEnToCn) ...[
+                const SizedBox(height: 12),
+                _buildPlayButton(question.wordId),
               ],
             ] else ...[
               Text(
@@ -612,7 +693,10 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            // ★ v4.3: 结果显示时播放单词发音
+            const SizedBox(height: 12),
+            _buildPlayButton(study.currentQuestion?.wordId ?? '', size: 40),
+            const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               height: 48,
@@ -660,6 +744,10 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     final phoneticUk = word['phonetic_uk'] as String? ?? '';
     final definitions = word['definitions'] as List? ?? [];
 
+    // ★ v4.3: 学习界面自动播放
+    final wordId = word['id']?.toString() ?? '';
+    _autoPlay('detail_$wordId', wordId);
+
     return Column(
       children: [
         Expanded(
@@ -697,46 +785,74 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      // 音标
+                      // 音标 + 发音按钮
                       if (phoneticUs.isNotEmpty || phoneticUk.isNotEmpty)
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             if (phoneticUs.isNotEmpty)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withOpacity(0.08),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  '美 $phoneticUs',
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    color: AppColors.primary,
+                              GestureDetector(
+                                onTap: () => _playWord(wordId, accent: 'us'),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withOpacity(0.08),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.volume_up_outlined,
+                                          size: 16, color: AppColors.primary),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '美 $phoneticUs',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
                             if (phoneticUs.isNotEmpty && phoneticUk.isNotEmpty)
                               const SizedBox(width: 12),
                             if (phoneticUk.isNotEmpty)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withOpacity(0.08),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  '英 $phoneticUk',
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    color: AppColors.primary,
+                              GestureDetector(
+                                onTap: () => _playWord(wordId, accent: 'uk'),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withOpacity(0.08),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.volume_up_outlined,
+                                          size: 16, color: AppColors.primary),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '英 $phoneticUk',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
                           ],
+                        ),
+                      // 没有音标数据时也显示发音按钮
+                      if (phoneticUs.isEmpty && phoneticUk.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: _buildPlayButton(wordId, size: 40),
                         ),
                     ],
                   ),

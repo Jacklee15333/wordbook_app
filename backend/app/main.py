@@ -261,6 +261,14 @@ except Exception as e:
     logger.error(f"FAIL admin: {e}")
     traceback.print_exc()
 
+try:
+    from app.api.media import router as media_router
+    app.include_router(media_router, prefix="/api/v1")
+    logger.info("OK media")
+except Exception as e:
+    logger.error(f"FAIL media: {e}")
+    traceback.print_exc()
+
 
 # ===== 固定端点 =====
 @app.get("/admin", include_in_schema=False)
