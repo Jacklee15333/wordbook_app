@@ -1,6 +1,6 @@
 // ╔═══════════════════════════════════════════════════════════════════════╗
-// ║  study_screen.dart  v4.5  2026-03-09                                ║
-// ║  v4.5: 进入测试页自动发音 + 喇叭在单词右侧 + 学习页不自动发音        ║
+// ║  study_screen.dart  v4.6  2026-03-10                                ║
+// ║  v4.6: 汉→英阶段不自动发音（避免暴露答案）                          ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
 
 import 'dart:html' as html;
@@ -126,8 +126,8 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   Widget _buildQuestionView(StudyState study) {
     final question = study.currentQuestion!;
 
-    // ★ v4.5: 进入测试页自动播放（所有步骤，不只英→汉）
-    if (!study.isShowingResult) {
+    // ★ v4.6: 汉→英阶段不自动播放（避免暴露答案），其余步骤正常播放
+    if (!study.isShowingResult && question.step != TestStep.cnToEn) {
       _autoPlay('q_${question.wordId}_${question.step.name}', question.wordId);
     }
 

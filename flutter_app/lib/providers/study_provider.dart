@@ -1,6 +1,6 @@
 // ╔═══════════════════════════════════════════════════════════════════════╗
-// ║  study_provider.dart  v3.9  2026-03-07                              ║
-// ║  v3.9: 步骤自然交错 + 间隔2题 + 单词书顺序                          ║
+// ║  study_provider.dart  v4.0  2026-03-10                              ║
+// ║  v4.0: 短语拼写按单词拆分，单词拼写按音节拆分                       ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
 
 import 'dart:convert';
@@ -11,7 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 
-const String _kVersion = '📦 study_provider v3.9 (2026-03-07) 步骤自然交错+间隔2题';
+const String _kVersion = '📦 study_provider v4.0 (2026-03-10) 短语拼写按单词拆+单词按音节拆';
 
 void _log(String msg) {
   debugPrint('[STUDY] $msg');
@@ -481,7 +481,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
 
       final sessionData = jsonEncode({
         'date': _todayStr(),
-        'sessionVersion': 4,  // ★ v3.9: 步骤交错调度
+        'sessionVersion': 5,  // ★ v4.0: 短语拆分逻辑变更
         'wordbookId': _wordbookId,
         'completedWordCount': state.completedWordCount,
         'queueItems': queueData,
@@ -511,7 +511,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
       }
       // ★ v3.8: 版本校验，旧版session自动失效以应用新调度逻辑
       final sessionVersion = data['sessionVersion'] as int? ?? 0;
-      if (sessionVersion < 4) {
+      if (sessionVersion < 5) {
         _log('🗑️ 旧版session(v$sessionVersion)，清除并重新开始');
         await prefs.remove(_sessionKey(wordbookId));
         return false;
@@ -570,7 +570,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
   Future<void> loadTodayTask(String wordbookId) async {
     _wordbookId = wordbookId;
     state = const StudyState(isLoading: true);
-    _log('📥 加载今日任务: wordbookId=$wordbookId (v3.9, _minGap=$_minGap)');
+    _log('📥 加载今日任务: wordbookId=$wordbookId (v4.0, _minGap=$_minGap)');
 
     // ★ 先尝试恢复当天进度
     final restored = await _restoreSession(wordbookId);
@@ -953,7 +953,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
       String wordId, String wordText, String meaning, String? phonetic) {
     meaning = _ensureValidMeaning(wordText, meaning);
 
-    // ★ v3.2: 把单词拆成音节块，打乱顺序让用户排列
+    // ★ v4.0: 短语按空格拆成完整单词，单词按音节拆分
     final chunks = _splitWordIntoChunks(wordText.toLowerCase());
     final shuffled = List<String>.from(chunks);
     // 确保打乱后和原顺序不同
@@ -984,8 +984,17 @@ class StudyNotifier extends StateNotifier<StudyState> {
     return true;
   }
 
-  /// 把单词拆分成 2~4 个音节块
+  /// 把单词/短语拆分成块
+  /// ★ v4.0: 短语 → 按空格拆成完整单词；单词 → 按音节拆成 2~4 块
   List<String> _splitWordIntoChunks(String word) {
+    // ★ 短语（含空格）：按空格分割成独立单词，不拆每个单词
+    if (word.contains(' ')) {
+      final parts = word.split(' ').where((w) => w.isNotEmpty).toList();
+      if (parts.length >= 2) return parts;
+      // 只有一个词的情况，走下面的单词拆分逻辑
+    }
+
+    // ★ 单个单词：按音节拆分
     final len = word.length;
     if (len <= 2) return [word];
     if (len <= 4) {
@@ -1357,8 +1366,10 @@ class StudyNotifier extends StateNotifier<StudyState> {
     final question = state.currentQuestion;
     if (question == null) return;
 
-    final isCorrect =
-        answer.toLowerCase().trim() == question.word.toLowerCase().trim();
+    // ★ v4.0: 去掉空格比较，兼容短语拼写（块join后无空格）
+    final normalizedAnswer = answer.replaceAll(' ', '').toLowerCase().trim();
+    final normalizedWord = question.word.replaceAll(' ', '').toLowerCase().trim();
+    final isCorrect = normalizedAnswer == normalizedWord;
 
     state = state.copyWith(
       lastResult: AnswerResult(
