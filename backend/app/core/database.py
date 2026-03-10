@@ -1,8 +1,11 @@
 """数据库连接管理"""
+import logging
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from app.core.config import get_settings
 
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -35,3 +38,23 @@ async def get_db() -> AsyncSession:
             raise
         finally:
             await session.close()
+
+
+# =====================================================
+#  v4.7 新增：安全自动建表
+#  只做 CREATE TABLE IF NOT EXISTS，绝不 DROP
+#  这样无论怎么更新代码，用户的学习数据都不会丢失
+# =====================================================
+
+async def safe_auto_migrate():
+    """启动时自动创建缺失的表，已有的表和数据不受影响"""
+    # 确保所有 model 都被导入，这样 Base.metadata 才有完整的表定义
+    try:
+        import app.models  # noqa: F401
+    except Exception as e:
+        logger.warning(f"导入 models 时出错: {e}")
+
+    async with engine.begin() as conn:
+        # checkfirst=True → 只创建不存在的表，已有的表不动
+        await conn.run_sync(Base.metadata.create_all, checkfirst=True)
+        logger.info("[AUTO-MIGRATE] 数据库表检查完成（只创建缺失的表，已有数据不受影响）")

@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.database import get_db, safe_auto_migrate
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.word import Wordbook, Word, WordbookWord
@@ -406,6 +406,12 @@ async def health_check():
 
 @app.on_event("startup")
 async def startup_event():
+    # ★ 安全自动建表：只创建缺失的表，绝不删除已有数据
+    try:
+        await safe_auto_migrate()
+    except Exception as e:
+        logger.error(f"自动建表出错（不影响启动）: {e}")
+
     logger.info("=" * 50)
     logger.info("ROUTE LIST v4.6.0 (media-direct):")
     for route in app.routes:

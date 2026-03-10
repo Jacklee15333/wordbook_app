@@ -86,6 +86,12 @@ if exist "%UPDATES_DIR%\database.py" (
     set UPDATED=1
 )
 
+if exist "%UPDATES_DIR%\init_db.py" (
+    copy /Y "%UPDATES_DIR%\init_db.py" "%BACKEND_DIR%\scripts\init_db.py" >nul
+    echo   [OK] init_db.py  -^>  backend\scripts\init_db.py
+    set UPDATED=1
+)
+
 if exist "%UPDATES_DIR%\theme.dart" (
     copy /Y "%UPDATES_DIR%\theme.dart" "%FRONTEND_DIR%\lib\core\theme.dart" >nul
     echo   [OK] theme.dart  -^>  flutter_app\lib\core\theme.dart
