@@ -1,6 +1,6 @@
 // ╔═══════════════════════════════════════════════════════════════════════╗
-// ║  study_screen.dart  v4.6  2026-03-10                                ║
-// ║  v4.6: 汉→英阶段不自动发音（避免暴露答案）                          ║
+// ║  study_screen.dart  v4.7  2026-03-11                                ║
+// ║  v4.7: 单词学习界面加载本地图片（media_storage/image）              ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
 
 import 'dart:html' as html;
@@ -740,277 +740,320 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     final phoneticUk = word['phonetic_uk'] as String? ?? '';
     final definitions = word['definitions'] as List? ?? [];
 
-    // ★ v4.5: 学习界面不自动播放，用户想听点喇叭
     final wordId = word['id']?.toString() ?? '';
+    final imageUrl = wordId.isNotEmpty
+        ? '${ApiConfig.baseUrl}/media/$wordId/image'
+        : '';
 
     return Column(
       children: [
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            padding: EdgeInsets.zero,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ★ 单词标题区域
-                Center(
-                  child: Column(
-                    children: [
-                      const Icon(
-                        Icons.check_circle_rounded,
-                        color: AppColors.success,
-                        size: 40,
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        '单词学习完成！',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: AppColors.success,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // ★ v4.5: 单词 + 喇叭横排
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              wordText,
-                              style: const TextStyle(
-                                fontSize: 36,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.textPrimary,
-                                letterSpacing: -0.5,
+                // ══════════════════════════════════════════
+                // 上部：图片区域（完整展示，不裁切）
+                // ══════════════════════════════════════════
+                Stack(
+                  children: [
+                    // ── 深色底色 + 完整图片 ──
+                    Container(
+                      width: double.infinity,
+                      constraints: const BoxConstraints(minHeight: 220),
+                      color: const Color(0xFF141C2A),
+                      child: imageUrl.isNotEmpty
+                          ? Image.network(
+                              imageUrl,
+                              width: double.infinity,
+                              fit: BoxFit.contain, // ★ 完整显示，不裁切
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return const SizedBox(
+                                  height: 220,
+                                  child: Center(
+                                    child: SizedBox(width: 28, height: 28,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white38)),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  height: 220,
+                                  decoration: const BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [Color(0xFF1A73E8), Color(0xFF0D47A1)],
+                                    ),
+                                  ),
+                                );
+                              },
+                            )
+                          : Container(
+                              height: 220,
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [Color(0xFF1A73E8), Color(0xFF0D47A1)],
+                                ),
                               ),
                             ),
+                    ),
+
+                    // ── 底部渐变（让文字和图片过渡自然） ──
+                    Positioned(
+                      left: 0, right: 0, bottom: 0,
+                      height: 100,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              const Color(0xFF141C2A).withOpacity(0.85),
+                            ],
                           ),
-                          _buildPlayButton(wordId),
-                        ],
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      // 音标
-                      if (phoneticUs.isNotEmpty || phoneticUk.isNotEmpty)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                    ),
+
+                    // ── 右上角 ✅ 完成标识 ──
+                    Positioned(
+                      top: 10, right: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.success.withOpacity(0.85),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (phoneticUs.isNotEmpty)
-                              GestureDetector(
-                                onTap: () => _playWord(wordId, accent: 'us'),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withOpacity(0.06),
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.volume_up_outlined,
-                                          size: 14, color: AppColors.primary.withOpacity(0.6)),
-                                      const SizedBox(width: 3),
-                                      Text(
-                                        '美 $phoneticUs',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: AppColors.primary.withOpacity(0.8),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            if (phoneticUs.isNotEmpty && phoneticUk.isNotEmpty)
-                              const SizedBox(width: 8),
-                            if (phoneticUk.isNotEmpty)
-                              GestureDetector(
-                                onTap: () => _playWord(wordId, accent: 'uk'),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withOpacity(0.06),
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.volume_up_outlined,
-                                          size: 14, color: AppColors.primary.withOpacity(0.6)),
-                                      const SizedBox(width: 3),
-                                      Text(
-                                        '英 $phoneticUk',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: AppColors.primary.withOpacity(0.8),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
+                            Icon(Icons.check_circle_rounded, color: Colors.white, size: 14),
+                            SizedBox(width: 4),
+                            Text('学习完成',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white)),
                           ],
                         ),
+                      ),
+                    ),
+
+                    // ── 左下角：单词 + 音标 + 喇叭 ──
+                    Positioned(
+                      left: 16, right: 16, bottom: 12,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  wordText,
+                                  style: const TextStyle(
+                                    fontSize: 34, fontWeight: FontWeight.w800,
+                                    color: Colors.white, letterSpacing: -0.5,
+                                    shadows: [Shadow(blurRadius: 10, color: Colors.black54, offset: Offset(0, 2))],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              GestureDetector(
+                                onTap: () => _playWord(wordId),
+                                child: Container(
+                                  width: 34, height: 34,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.2),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    _isPlaying ? Icons.volume_up_rounded : Icons.volume_up_outlined,
+                                    color: Colors.white, size: 18,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          if (phoneticUs.isNotEmpty || phoneticUk.isNotEmpty)
+                            Row(
+                              children: [
+                                if (phoneticUs.isNotEmpty)
+                                  GestureDetector(
+                                    onTap: () => _playWord(wordId, accent: 'us'),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.volume_up_outlined, size: 12, color: Colors.white70),
+                                          const SizedBox(width: 3),
+                                          Text('美 $phoneticUs',
+                                            style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                if (phoneticUs.isNotEmpty && phoneticUk.isNotEmpty)
+                                  const SizedBox(width: 6),
+                                if (phoneticUk.isNotEmpty)
+                                  GestureDetector(
+                                    onTap: () => _playWord(wordId, accent: 'uk'),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.volume_up_outlined, size: 12, color: Colors.white70),
+                                          const SizedBox(width: 3),
+                                          Text('英 $phoneticUk',
+                                            style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                // ══════════════════════════════════════════
+                // 下部：释义等内容（纯白背景，文字清晰）
+                // ══════════════════════════════════════════
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                  color: AppColors.background,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ★ 释义
+                      if (definitions.isNotEmpty) ...[
+                        const Text('释义',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                        const SizedBox(height: 12),
+                        ...definitions.map<Widget>((def) {
+                          final pos = (def['pos'] as String? ?? '').trim();
+                          final cn = (def['cn'] as String? ?? '').trim();
+                          final meaning = (def['meaning'] as String? ?? '').trim();
+                          final defCn = (def['definition_cn'] as String? ?? '').trim();
+                          final definition = (def['definition'] as String? ?? '').trim();
+                          final example = (def['example'] as String? ?? '').trim();
+                          final exampleCn = (def['example_cn'] as String? ?? '').trim();
+
+                          String displayCn = '';
+                          if (cn.isNotEmpty) {
+                            displayCn = cn;
+                          } else if (meaning.isNotEmpty && RegExp(r'[\u4e00-\u9fff]').hasMatch(meaning)) {
+                            displayCn = meaning;
+                          } else if (defCn.isNotEmpty) {
+                            displayCn = defCn;
+                          }
+
+                          if (displayCn.isEmpty && definition.isEmpty) {
+                            return const SizedBox.shrink();
+                          }
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: AppColors.surface,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.cardBorder),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      if (pos.isNotEmpty) ...[
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.primary.withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(pos,
+                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primary)),
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      Expanded(
+                                        child: Text(
+                                          displayCn.isNotEmpty ? displayCn : definition,
+                                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (definition.isNotEmpty && displayCn.isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    Text(definition,
+                                      style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                                  ],
+                                  if (example.isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.background,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(example,
+                                            style: const TextStyle(fontSize: 14, color: AppColors.textPrimary, fontStyle: FontStyle.italic)),
+                                          if (exampleCn.isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Text(exampleCn,
+                                              style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ],
+
+                      if (definitions.isEmpty)
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text('暂无详细释义数据',
+                              style: TextStyle(fontSize: 14, color: AppColors.textHint)),
+                          ),
+                        ),
+
+                      // ── 后续可在这里添加词根词缀、巧记等卡片 ──
                     ],
                   ),
                 ),
-
-                const SizedBox(height: 24),
-                const Divider(color: AppColors.divider),
-                const SizedBox(height: 16),
-
-                // ★ 释义列表
-                if (definitions.isNotEmpty) ...[
-                  const Text(
-                    '释义',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ...definitions.map<Widget>((def) {
-                    final pos = (def['pos'] as String? ?? '').trim();
-                    final cn = (def['cn'] as String? ?? '').trim();
-                    final meaning = (def['meaning'] as String? ?? '').trim();
-                    final defCn = (def['definition_cn'] as String? ?? '').trim();
-                    final definition = (def['definition'] as String? ?? '').trim();
-                    final example = (def['example'] as String? ?? '').trim();
-                    final exampleCn = (def['example_cn'] as String? ?? '').trim();
-
-                    // 中文释义优先级
-                    String displayCn = '';
-                    if (cn.isNotEmpty) {
-                      displayCn = cn;
-                    } else if (meaning.isNotEmpty && RegExp(r'[\u4e00-\u9fff]').hasMatch(meaning)) {
-                      displayCn = meaning;
-                    } else if (defCn.isNotEmpty) {
-                      displayCn = defCn;
-                    }
-
-                    if (displayCn.isEmpty && definition.isEmpty) {
-                      return const SizedBox.shrink();
-                    }
-
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.cardBorder),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 词性 + 释义
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (pos.isNotEmpty) ...[
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      pos,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.primary,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                ],
-                                Expanded(
-                                  child: Text(
-                                    displayCn.isNotEmpty ? displayCn : definition,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            // 英文释义
-                            if (definition.isNotEmpty && displayCn.isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                definition,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ],
-                            // 例句
-                            if (example.isNotEmpty) ...[
-                              const SizedBox(height: 10),
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: AppColors.background,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      example,
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        color: AppColors.textPrimary,
-                                        fontStyle: FontStyle.italic,
-                                      ),
-                                    ),
-                                    if (exampleCn.isNotEmpty) ...[
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        exampleCn,
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: AppColors.textSecondary,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ],
-
-                // ★ 如果没有释义数据，显示基本信息
-                if (definitions.isEmpty) ...[
-                  Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        '暂无详细释义数据',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textHint,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),

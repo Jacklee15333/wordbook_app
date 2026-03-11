@@ -1,7 +1,9 @@
 """
 背单词 App - 后端服务入口
+v4.7: 新增单词图片接口 /media/{word_id}/image
 """
 import os
+import glob
 import json
 import uuid as uuid_mod
 import logging
@@ -25,8 +27,8 @@ settings = get_settings()
 
 app = FastAPI(
     title="WordBook API v3",
-    description="WordBook API with batch import",
-    version="4.6.0",
+    description="WordBook API with batch import + word image",
+    version="4.7.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -43,12 +45,12 @@ app.add_middleware(
 # ===== 诊断端点（直接在 app 上） =====
 @app.get("/ping")
 async def ping():
-    return {"pong": True, "version": "4.6.0"}
+    return {"pong": True, "version": "4.7.0"}
 
 @app.get("/api/v1/media-test")
 async def media_test():
     """Dead simple test - no imports, no DB"""
-    return {"ok": True, "msg": "media-test works", "version": "4.6.0"}
+    return {"ok": True, "msg": "media-test works", "version": "4.7.0"}
 
 
 @app.get("/test/{some_id}/action")
@@ -385,6 +387,109 @@ async def media_preload_v45(
         return {"message": str(e), "total_words": 0}
 
 
+# ===== v4.7 单词图片接口 =====
+# 图片存储目录: backend/media_storage/image/
+# 文件命名: {word_text}.png  (如 ability.png, be able to do sth..png)
+
+_IMAGE_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)),  # → backend/
+    "media_storage", "image"
+)
+
+
+def _find_word_image(word_text: str) -> str | None:
+    """在 media_storage/image/ 目录中查找单词对应的图片文件。
+    支持 png/jpg/jpeg/gif/webp，优先精确匹配，再 case-insensitive。
+    """
+    if not os.path.isdir(_IMAGE_DIR):
+        return None
+
+    exts = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+
+    # 1) 精确匹配
+    for ext in exts:
+        path = os.path.join(_IMAGE_DIR, f"{word_text}{ext}")
+        if os.path.isfile(path):
+            return path
+
+    # 2) case-insensitive 匹配
+    lower = word_text.lower()
+    try:
+        for fname in os.listdir(_IMAGE_DIR):
+            name_part, fext = os.path.splitext(fname)
+            if fext.lower() in exts and name_part.lower() == lower:
+                return os.path.join(_IMAGE_DIR, fname)
+    except OSError:
+        pass
+
+    return None
+
+
+_MIME_MAP = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
+
+@app.get("/api/v1/media/{word_id}/image")
+async def get_word_image(
+    word_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """获取单词配图。根据 word_id 查词库得到 word_text，再从本地图片目录匹配。"""
+    import uuid as _u
+    try:
+        wid = _u.UUID(str(word_id).strip())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid word_id")
+
+    result = await db.execute(select(Word.word).where(Word.id == wid))
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="word not found")
+
+    word_text = row[0]
+    img_path = _find_word_image(word_text)
+    if not img_path:
+        raise HTTPException(status_code=404, detail=f"no image for: {word_text}")
+
+    ext = os.path.splitext(img_path)[1].lower()
+    mime = _MIME_MAP.get(ext, "image/png")
+
+    return FileResponse(
+        img_path,
+        media_type=mime,
+        headers={
+            "Cache-Control": "public, max-age=604800",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+@app.get("/api/v1/media/{word_id}/image/check")
+async def check_word_image(
+    word_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """检查单词是否有配图（轻量接口，不返回图片内容）。"""
+    import uuid as _u
+    try:
+        wid = _u.UUID(str(word_id).strip())
+    except ValueError:
+        return {"has_image": False}
+
+    result = await db.execute(select(Word.word).where(Word.id == wid))
+    row = result.first()
+    if not row:
+        return {"has_image": False}
+
+    img_path = _find_word_image(row[0])
+    return {"has_image": img_path is not None, "word": row[0]}
+
+
 # ===== 固定端点 =====
 @app.get("/admin", include_in_schema=False)
 async def admin_page():
@@ -396,7 +501,7 @@ async def admin_page():
 
 @app.get("/")
 async def root():
-    return {"app": "WordBook API", "version": "4.6.0"}
+    return {"app": "WordBook API", "version": "4.7.0"}
 
 
 @app.get("/health")
@@ -413,7 +518,7 @@ async def startup_event():
         logger.error(f"自动建表出错（不影响启动）: {e}")
 
     logger.info("=" * 50)
-    logger.info("ROUTE LIST v4.6.0 (media-direct):")
+    logger.info("ROUTE LIST v4.7.0 (media-direct + image):")
     for route in app.routes:
         if hasattr(route, 'methods') and hasattr(route, 'path'):
             methods = ','.join(route.methods)

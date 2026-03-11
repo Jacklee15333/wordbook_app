@@ -1,0 +1,47 @@
+{
+   "checksum": "fd150784a56983876395994c6a91d081",
+   "roots": {
+      "bookmark_bar": {
+         "children": [  ],
+         "date_added": "13417679404453822",
+         "date_last_used": "0",
+         "date_modified": "0",
+         "guid": "0bc5d13f-2cba-5d74-951f-3f233fe6c908",
+         "id": "1",
+         "name": "书签栏",
+         "type": "folder"
+      },
+      "other": {
+         "children": [ {
+            "date_added": "13417679940013157",
+            "date_last_used": "0",
+            "guid": "9e6a1683-0824-47f3-bbdf-c691b0a791a9",
+            "id": "5",
+            "meta_info": {
+               "power_bookmark_meta": ""
+            },
+            "name": "Big tits japanese - nanairo.co - XVIDEOS.COM",
+            "type": "url",
+            "url": "https://www.xvideos.com/video.iucovum4d28/big_tits_japanese_-_nanairo.co"
+         } ],
+         "date_added": "13417679404453822",
+         "date_last_used": "0",
+         "date_modified": "13417679940013157",
+         "guid": "82b081ec-3dd3-529c-8475-ab6c344590dd",
+         "id": "2",
+         "name": "其他书签",
+         "type": "folder"
+      },
+      "synced": {
+         "children": [  ],
+         "date_added": "13417679404453822",
+         "date_last_used": "0",
+         "date_modified": "0",
+         "guid": "4cf2e351-0e85-532b-bb37-df045d8f8d0f",
+         "id": "3",
+         "name": "移动设备书签",
+         "type": "folder"
+      }
+   },
+   "version": 1
+}
