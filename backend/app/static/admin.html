@@ -511,6 +511,42 @@
             font-size: 48px;
             margin-bottom: 12px;
         }
+        /* v4.7: 词库媒体图标 */
+        .media-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: transform 0.15s, background 0.15s;
+        }
+        .media-icon:hover { transform: scale(1.2); }
+        .media-icon-audio { background: var(--primary-bg); }
+        .media-icon-audio:hover { background: var(--primary); filter: brightness(1.5); }
+        .media-icon-image { background: #f0f7ff; }
+        .media-icon-image:hover { background: #e0efff; }
+
+        /* v4.7: 媒体页选项卡 */
+        .media-tab {
+            padding: 10px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--gray-500);
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            transition: color 0.2s, border-color 0.2s;
+            margin-bottom: -2px;
+        }
+        .media-tab:hover { color: var(--gray-700); }
+        .media-tab-active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
     </style>
 </head>
 <body>
@@ -639,12 +675,14 @@
                         <th>单词</th>
                         <th>释义</th>
                         <th>音标</th>
+                        <th>音频</th>
+                        <th>图片</th>
                         <th>来源</th>
                         <th>操作</th>
                     </tr>
                 </thead>
                 <tbody id="vocab-tbody">
-                    <tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr>
+                    <tr><td colspan="8" class="loading"><div class="spinner"></div></td></tr>
                 </tbody>
             </table>
             <div class="pagination" id="vocab-pagination"></div>
@@ -763,144 +801,203 @@
     </div>
 
     <!-- ==================== Media Resources Section ==================== -->
+    <!-- ==================== Media Resources Section (v4.7 redesign) ==================== -->
     <div id="section-media" class="section">
         <div class="page-header">
             <h2>媒体资源库</h2>
-            <p>管理单词音频、图片、视频等多媒体资源</p>
+            <p>管理单词音频、图片等多媒体资源</p>
         </div>
 
-        <!-- Stats -->
+        <!-- ═══ 统计概览 ═══ -->
         <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
             <div class="stat-card">
-                <div class="label">美音缓存</div>
+                <div class="label">🔊 音频文件</div>
                 <div class="value" id="media-audio-us">-</div>
+                <div style="font-size:11px;color:var(--gray-400);margin-top:4px;" id="media-total-size">-</div>
             </div>
             <div class="stat-card">
-                <div class="label">英音缓存</div>
-                <div class="value" id="media-audio-uk">-</div>
+                <div class="label">🖼️ 单词配图</div>
+                <div class="value" id="media-image-count" style="color:var(--primary);">-</div>
+                <div style="font-size:11px;color:var(--gray-400);margin-top:4px;" id="image-total-size">-</div>
             </div>
             <div class="stat-card">
-                <div class="label">缓存总大小</div>
-                <div class="value" id="media-total-size">-</div>
-            </div>
-            <div class="stat-card">
-                <div class="label">下载状态</div>
+                <div class="label">📊 下载状态</div>
                 <div class="value" id="media-preload-status" style="font-size:14px;">-</div>
             </div>
+            <div class="stat-card">
+                <div class="label">🔇 英音缓存</div>
+                <div class="value" id="media-audio-uk">-</div>
+            </div>
         </div>
 
-        <!-- Download Progress Panel (shown when downloading) -->
-        <div id="media-download-panel" style="display:none; margin-bottom:20px;">
-            <div class="table-container">
-                <div class="table-toolbar" style="background:var(--primary-bg); border-bottom:2px solid var(--primary);">
-                    <h3 style="color:var(--primary);">
-                        <span class="spinner" style="width:16px;height:16px;border-width:2px;vertical-align:middle;margin-right:8px;"></span>
-                        正在下载音频 — <span id="dl-wordbook-name">-</span>
-                    </h3>
+        <!-- ═══ 选项卡导航 ═══ -->
+        <div style="display:flex;gap:0;border-bottom:2px solid var(--gray-200);margin-top:24px;margin-bottom:0;">
+            <button id="media-tab-audio" class="media-tab media-tab-active" onclick="switchMediaTab('audio')">
+                🔊 音频管理
+            </button>
+            <button id="media-tab-image" class="media-tab" onclick="switchMediaTab('image')">
+                🖼️ 图片管理
+            </button>
+        </div>
+
+        <!-- ═══════════════════════════════════════ -->
+        <!-- TAB: 音频管理                          -->
+        <!-- ═══════════════════════════════════════ -->
+        <div id="media-panel-audio">
+
+            <!-- Download Progress Panel -->
+            <div id="media-download-panel" style="display:none; margin-top:16px;">
+                <div class="table-container">
+                    <div class="table-toolbar" style="background:var(--primary-bg); border-bottom:2px solid var(--primary);">
+                        <h3 style="color:var(--primary);">
+                            <span class="spinner" style="width:16px;height:16px;border-width:2px;vertical-align:middle;margin-right:8px;"></span>
+                            正在下载音频 — <span id="dl-wordbook-name">-</span>
+                        </h3>
+                        <div class="toolbar-actions">
+                            <span id="dl-elapsed" style="font-size:12px;color:var(--gray-500);">已用时: 0秒</span>
+                        </div>
+                    </div>
+                    <div style="padding:20px;">
+                        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+                            <div style="flex:1;height:12px;background:var(--gray-200);border-radius:6px;overflow:hidden;">
+                                <div id="dl-progress-bar" style="width:0%;height:100%;border-radius:6px;transition:width 0.5s ease;background:linear-gradient(90deg, var(--primary), var(--primary-light));"></div>
+                            </div>
+                            <span id="dl-progress-pct" style="font-size:18px;font-weight:700;color:var(--primary);min-width:50px;text-align:right;">0%</span>
+                        </div>
+                        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px;">
+                            <div style="text-align:center;padding:10px;background:var(--gray-50);border-radius:8px;">
+                                <div style="font-size:11px;color:var(--gray-500);">待下载</div>
+                                <div id="dl-total" style="font-size:20px;font-weight:700;color:var(--gray-800);">0</div>
+                            </div>
+                            <div style="text-align:center;padding:10px;background:var(--success-bg);border-radius:8px;">
+                                <div style="font-size:11px;color:var(--success);">已下载</div>
+                                <div id="dl-done" style="font-size:20px;font-weight:700;color:var(--success);">0</div>
+                            </div>
+                            <div style="text-align:center;padding:10px;background:var(--danger-bg);border-radius:8px;">
+                                <div style="font-size:11px;color:var(--danger);">失败</div>
+                                <div id="dl-failed" style="font-size:20px;font-weight:700;color:var(--danger);">0</div>
+                            </div>
+                            <div style="text-align:center;padding:10px;background:var(--gray-50);border-radius:8px;">
+                                <div style="font-size:11px;color:var(--gray-500);">已跳过(有缓存)</div>
+                                <div id="dl-skipped" style="font-size:20px;font-weight:700;color:var(--gray-600);">0</div>
+                            </div>
+                            <div style="text-align:center;padding:10px;background:var(--primary-bg);border-radius:8px;">
+                                <div style="font-size:11px;color:var(--primary);">下载速度</div>
+                                <div id="dl-speed" style="font-size:20px;font-weight:700;color:var(--primary);">-</div>
+                            </div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--gray-50);border-radius:8px;border-left:3px solid var(--primary);">
+                            <span style="font-size:12px;color:var(--gray-500);white-space:nowrap;">正在下载:</span>
+                            <span id="dl-current-word" style="font-size:14px;font-weight:600;color:var(--primary);">等待中...</span>
+                        </div>
+                        <div id="dl-failed-words-section" style="display:none;margin-top:12px;">
+                            <div style="font-size:12px;color:var(--danger);font-weight:500;margin-bottom:6px;">下载失败的单词:</div>
+                            <div id="dl-failed-words-list" style="font-size:12px;color:var(--gray-600);padding:8px 12px;background:var(--danger-bg);border-radius:6px;max-height:80px;overflow-y:auto;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Download complete panel -->
+            <div id="media-complete-panel" style="display:none; margin-top:16px;">
+                <div class="table-container">
+                    <div class="table-toolbar" style="background:var(--success-bg); border-bottom:2px solid var(--success);">
+                        <h3 style="color:var(--success);">✅ 下载完成 — <span id="cpl-wordbook-name">-</span></h3>
+                        <button class="btn btn-sm btn-outline" onclick="document.getElementById('media-complete-panel').style.display='none'">关闭</button>
+                    </div>
+                    <div style="padding:16px 20px;">
+                        <div style="display:flex;gap:20px;font-size:14px;">
+                            <span>成功: <strong id="cpl-done" style="color:var(--success);">0</strong></span>
+                            <span>失败: <strong id="cpl-failed" style="color:var(--danger);">0</strong></span>
+                            <span>耗时: <strong id="cpl-elapsed" style="color:var(--gray-600);">0秒</strong></span>
+                        </div>
+                        <div id="cpl-failed-words-section" style="display:none;margin-top:10px;">
+                            <div style="font-size:12px;color:var(--danger);font-weight:500;margin-bottom:4px;">失败列表:</div>
+                            <div id="cpl-failed-words-list" style="font-size:12px;color:var(--gray-600);padding:6px 10px;background:var(--danger-bg);border-radius:6px;max-height:60px;overflow-y:auto;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Wordbook audio coverage -->
+            <div class="table-container" style="margin-top:16px;">
+                <div class="table-toolbar">
+                    <h3>词书音频覆盖率</h3>
                     <div class="toolbar-actions">
-                        <span id="dl-elapsed" style="font-size:12px;color:var(--gray-500);">已用时: 0秒</span>
+                        <button class="btn btn-outline" onclick="loadMediaStatus()">刷新</button>
                     </div>
                 </div>
-                <div style="padding:20px;">
-                    <!-- Progress bar -->
-                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-                        <div style="flex:1;height:12px;background:var(--gray-200);border-radius:6px;overflow:hidden;position:relative;">
-                            <div id="dl-progress-bar" style="width:0%;height:100%;border-radius:6px;transition:width 0.5s ease;background:linear-gradient(90deg, var(--primary), var(--primary-light));"></div>
-                        </div>
-                        <span id="dl-progress-pct" style="font-size:18px;font-weight:700;color:var(--primary);min-width:50px;text-align:right;">0%</span>
-                    </div>
-                    <!-- Stats row -->
-                    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px;">
-                        <div style="text-align:center;padding:10px;background:var(--gray-50);border-radius:8px;">
-                            <div style="font-size:11px;color:var(--gray-500);">待下载</div>
-                            <div id="dl-total" style="font-size:20px;font-weight:700;color:var(--gray-800);">0</div>
-                        </div>
-                        <div style="text-align:center;padding:10px;background:var(--success-bg);border-radius:8px;">
-                            <div style="font-size:11px;color:var(--success);">已下载</div>
-                            <div id="dl-done" style="font-size:20px;font-weight:700;color:var(--success);">0</div>
-                        </div>
-                        <div style="text-align:center;padding:10px;background:var(--danger-bg);border-radius:8px;">
-                            <div style="font-size:11px;color:var(--danger);">失败</div>
-                            <div id="dl-failed" style="font-size:20px;font-weight:700;color:var(--danger);">0</div>
-                        </div>
-                        <div style="text-align:center;padding:10px;background:var(--gray-50);border-radius:8px;">
-                            <div style="font-size:11px;color:var(--gray-500);">已跳过(有缓存)</div>
-                            <div id="dl-skipped" style="font-size:20px;font-weight:700;color:var(--gray-600);">0</div>
-                        </div>
-                        <div style="text-align:center;padding:10px;background:var(--primary-bg);border-radius:8px;">
-                            <div style="font-size:11px;color:var(--primary);">下载速度</div>
-                            <div id="dl-speed" style="font-size:20px;font-weight:700;color:var(--primary);">-</div>
-                        </div>
-                    </div>
-                    <!-- Current word -->
-                    <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--gray-50);border-radius:8px;border-left:3px solid var(--primary);">
-                        <span style="font-size:12px;color:var(--gray-500);white-space:nowrap;">正在下载:</span>
-                        <span id="dl-current-word" style="font-size:14px;font-weight:600;color:var(--primary);">等待中...</span>
-                    </div>
-                    <!-- Failed words list -->
-                    <div id="dl-failed-words-section" style="display:none;margin-top:12px;">
-                        <div style="font-size:12px;color:var(--danger);font-weight:500;margin-bottom:6px;">下载失败的单词:</div>
-                        <div id="dl-failed-words-list" style="font-size:12px;color:var(--gray-600);padding:8px 12px;background:var(--danger-bg);border-radius:6px;max-height:80px;overflow-y:auto;"></div>
-                    </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>词书名称</th>
+                            <th>单词数</th>
+                            <th>已缓存</th>
+                            <th>覆盖率</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="media-wordbooks-tbody">
+                        <tr><td colspan="5" class="loading"><div class="spinner"></div></td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Audio file list -->
+            <div class="table-container" style="margin-top:16px;">
+                <div class="table-toolbar">
+                    <h3>本地音频文件</h3>
+                    <span style="font-size:12px; color:var(--gray-400); margin-left:12px;">backend/media_storage/audio/</span>
+                </div>
+                <div id="media-files-list" style="padding:16px; max-height:260px; overflow-y:auto; font-family:monospace; font-size:13px; color:var(--gray-600);">
+                    加载中...
                 </div>
             </div>
         </div>
 
-        <!-- Download complete panel (shown after download finishes) -->
-        <div id="media-complete-panel" style="display:none; margin-bottom:20px;">
-            <div class="table-container">
-                <div class="table-toolbar" style="background:var(--success-bg); border-bottom:2px solid var(--success);">
-                    <h3 style="color:var(--success);">✅ 下载完成 — <span id="cpl-wordbook-name">-</span></h3>
-                    <button class="btn btn-sm btn-outline" onclick="document.getElementById('media-complete-panel').style.display='none'">关闭</button>
+        <!-- ═══════════════════════════════════════ -->
+        <!-- TAB: 图片管理                          -->
+        <!-- ═══════════════════════════════════════ -->
+        <div id="media-panel-image" style="display:none;">
+
+            <!-- Image wordbook coverage -->
+            <div class="table-container" style="margin-top:16px;">
+                <div class="table-toolbar">
+                    <h3>词书配图覆盖率</h3>
+                    <div class="toolbar-actions">
+                        <span id="image-dir-path" style="font-size:12px; color:var(--gray-400); margin-right:12px;"></span>
+                        <button class="btn btn-outline" onclick="loadImageStatus()">刷新</button>
+                    </div>
                 </div>
-                <div style="padding:16px 20px;">
-                    <div style="display:flex;gap:20px;font-size:14px;">
-                        <span>成功: <strong id="cpl-done" style="color:var(--success);">0</strong></span>
-                        <span>失败: <strong id="cpl-failed" style="color:var(--danger);">0</strong></span>
-                        <span>耗时: <strong id="cpl-elapsed" style="color:var(--gray-600);">0秒</strong></span>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>词书名称</th>
+                            <th>单词数</th>
+                            <th>有配图</th>
+                            <th>覆盖率</th>
+                        </tr>
+                    </thead>
+                    <tbody id="image-wordbooks-tbody">
+                        <tr><td colspan="4" class="loading"><div class="spinner"></div></td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Image grid -->
+            <div class="table-container" style="margin-top:16px;">
+                <div class="table-toolbar">
+                    <h3>图片文件</h3>
+                    <div class="toolbar-actions">
+                        <span id="image-file-count" style="font-size:12px; color:var(--gray-400);">-</span>
                     </div>
-                    <div id="cpl-failed-words-section" style="display:none;margin-top:10px;">
-                        <div style="font-size:12px;color:var(--danger);font-weight:500;margin-bottom:4px;">失败列表:</div>
-                        <div id="cpl-failed-words-list" style="font-size:12px;color:var(--gray-600);padding:6px 10px;background:var(--danger-bg);border-radius:6px;max-height:60px;overflow-y:auto;"></div>
-                    </div>
+                </div>
+                <div id="image-files-grid" style="padding:16px; max-height:500px; overflow-y:auto;">
+                    加载中...
                 </div>
             </div>
         </div>
 
-        <!-- Wordbook preload -->
-        <div class="table-container" style="margin-top:20px;">
-            <div class="table-toolbar">
-                <h3>词书音频预下载</h3>
-                <div class="toolbar-actions">
-                    <button class="btn btn-outline" onclick="loadMediaStatus()">刷新</button>
-                </div>
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>词书名称</th>
-                        <th>单词数</th>
-                        <th>已缓存</th>
-                        <th>覆盖率</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody id="media-wordbooks-tbody">
-                    <tr><td colspan="5" class="loading"><div class="spinner"></div></td></tr>
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Recent downloads -->
-        <div class="table-container" style="margin-top:20px;">
-            <div class="table-toolbar">
-                <h3>本地缓存文件</h3>
-                <p style="font-size:12px; color:var(--gray-500); margin-left:12px;">位置: backend/media_storage/audio/</p>
-            </div>
-            <div id="media-files-list" style="padding:16px; max-height:300px; overflow-y:auto; font-family:monospace; font-size:13px; color:var(--gray-600);">
-                加载中...
-            </div>
-        </div>
     </div>
 
 </div>
@@ -1028,7 +1125,7 @@ function switchSection(section) {
         case 'users': loadUsers(); break;
         case 'vocabulary': loadVocabulary(); break;
         case 'import-logs': loadImportTasks(); break;
-        case 'media': loadMediaStatus(); break;
+        case 'media': loadMediaStatus(); loadImageStatus(); break;
     }
 }
 
@@ -1176,7 +1273,7 @@ function debounceVocabSearch() {
 async function loadVocabulary() {
     const search = document.getElementById('vocab-search').value;
     const tbody = document.getElementById('vocab-tbody');
-    tbody.innerHTML = '<tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="loading"><div class="spinner"></div></td></tr>';
 
     try {
         let url = `${API_BASE}/vocabulary/list?page=${vocabPage}&page_size=50`;
@@ -1184,16 +1281,19 @@ async function loadVocabulary() {
         const data = await api(url);
 
         if (data.items.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无词条</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="empty-state">暂无词条</td></tr>';
             return;
         }
 
+        // 先渲染表格（媒体列先显示 loading）
         tbody.innerHTML = data.items.map(v => `
             <tr>
                 <td>${v.id}</td>
                 <td><strong>${esc(v.word)}</strong></td>
                 <td style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(v.meaning || '')}">${esc(v.meaning || '-')}</td>
                 <td>${esc(v.phonetic || '-')}</td>
+                <td id="audio-cell-${v.id}" style="text-align:center;"><span style="color:var(--gray-300);">·</span></td>
+                <td id="image-cell-${v.id}" style="text-align:center;"><span style="color:var(--gray-300);">·</span></td>
                 <td><span class="badge ${v.added_from === 'ai_approved' ? 'badge-primary' : 'badge-gray'}">${v.added_from || 'manual'}</span></td>
                 <td>
                     <button class="btn btn-sm btn-outline" onclick="editVocabulary(${v.id})">编辑</button>
@@ -1203,9 +1303,68 @@ async function loadVocabulary() {
         `).join('');
 
         renderPagination('vocab-pagination', data, (p) => { vocabPage = p; loadVocabulary(); });
+
+        // 异步批量检查媒体状态
+        const words = data.items.map(v => v.word);
+        try {
+            const mediaData = await api(`${API_V1}/media-admin/word-media-batch`, {
+                method: 'POST',
+                body: JSON.stringify({ words }),
+            });
+            const results = mediaData.results || {};
+
+            data.items.forEach(v => {
+                const info = results[v.word];
+                const audioCell = document.getElementById(`audio-cell-${v.id}`);
+                const imageCell = document.getElementById(`image-cell-${v.id}`);
+
+                if (audioCell) {
+                    if (info && info.has_audio) {
+                        audioCell.innerHTML = `<span class="media-icon media-icon-audio" onclick="playVocabAudio('${esc(v.word)}')" title="点击播放">🔊</span>`;
+                    } else {
+                        audioCell.innerHTML = `<span style="color:var(--gray-300);" title="无音频">—</span>`;
+                    }
+                }
+                if (imageCell) {
+                    if (info && info.has_image) {
+                        imageCell.innerHTML = `<span class="media-icon media-icon-image" onclick="previewVocabImage('${esc(v.word)}')" title="点击预览">🖼️</span>`;
+                    } else {
+                        imageCell.innerHTML = `<span style="color:var(--gray-300);" title="无图片">—</span>`;
+                    }
+                }
+            });
+        } catch (e) {
+            console.warn('媒体状态检查失败:', e);
+        }
+
     } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty-state" style="color:var(--danger)">加载失败</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state" style="color:var(--danger)">加载失败</td></tr>';
     }
+}
+
+// ★ v4.7: 播放词库单词音频
+let _vocabAudioEl = null;
+function playVocabAudio(word) {
+    if (_vocabAudioEl) { _vocabAudioEl.pause(); _vocabAudioEl = null; }
+    _vocabAudioEl = new Audio(`${API_V1}/media-admin/audio-by-word/${encodeURIComponent(word)}`);
+    _vocabAudioEl.play().catch(e => toast('播放失败: ' + e.message, 'error'));
+}
+
+// ★ v4.7: 预览词库单词图片
+function previewVocabImage(word) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:pointer;';
+    overlay.onclick = () => overlay.remove();
+    const img = document.createElement('img');
+    img.src = `${API_V1}/media-admin/image-by-word/${encodeURIComponent(word)}`;
+    img.style.cssText = 'max-width:90vw;max-height:85vh;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,0.5);';
+    img.onerror = () => { overlay.remove(); toast('图片加载失败', 'error'); };
+    const label = document.createElement('div');
+    label.style.cssText = 'position:absolute;bottom:20px;left:50%;transform:translateX(-50%);color:white;font-size:20px;font-weight:700;text-shadow:0 2px 8px rgba(0,0,0,0.5);';
+    label.textContent = word;
+    overlay.appendChild(img);
+    overlay.appendChild(label);
+    document.body.appendChild(overlay);
 }
 
 function showAddVocabModal() {
@@ -1867,6 +2026,83 @@ async function preloadWordbook(wordbookId, wordbookName) {
         setTimeout(loadMediaStatus, 1000);
     } catch (e) {
         toast('下载启动失败: ' + e.message, 'error');
+    }
+}
+
+// ===== v4.7: 图片管理 =====
+// ===== v4.7: 媒体页选项卡切换 =====
+function switchMediaTab(tab) {
+    // Toggle panels
+    document.getElementById('media-panel-audio').style.display = tab === 'audio' ? 'block' : 'none';
+    document.getElementById('media-panel-image').style.display = tab === 'image' ? 'block' : 'none';
+    // Toggle tab active state
+    document.getElementById('media-tab-audio').classList.toggle('media-tab-active', tab === 'audio');
+    document.getElementById('media-tab-image').classList.toggle('media-tab-active', tab === 'image');
+    // Load data for the selected tab
+    if (tab === 'image') loadImageStatus();
+}
+
+async function loadImageStatus() {
+    try {
+        const data = await api(`${API_V1}/media-admin/image-status`);
+
+        // 更新顶部统计
+        document.getElementById('media-image-count').textContent = data.image_count + ' 张';
+
+        // 目录路径和总大小
+        document.getElementById('image-dir-path').textContent = '位置: ' + (data.image_dir || 'media_storage/image/');
+        document.getElementById('image-total-size').textContent = '总大小: ' + formatSize(data.total_size_bytes);
+        document.getElementById('image-file-count').textContent = `共 ${data.image_count} 张图片`;
+
+        // 词书图片覆盖率表格
+        const tbody = document.getElementById('image-wordbooks-tbody');
+        if (data.wordbooks && data.wordbooks.length > 0) {
+            tbody.innerHTML = data.wordbooks.map(wb => {
+                const pct = wb.total > 0 ? Math.round(wb.has_image / wb.total * 100) : 0;
+                const barColor = pct === 100 ? 'var(--success)' : pct > 50 ? 'var(--warning)' : pct > 0 ? 'var(--primary)' : 'var(--gray-400)';
+                return `<tr>
+                    <td><strong>${escapeHtml(wb.name)}</strong></td>
+                    <td>${wb.total}</td>
+                    <td>${wb.has_image}</td>
+                    <td>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <div style="flex:1;height:6px;background:var(--gray-200);border-radius:3px;overflow:hidden;">
+                                <div style="width:${pct}%;height:100%;background:${barColor};border-radius:3px;"></div>
+                            </div>
+                            <span style="font-size:12px;font-weight:600;color:${barColor};">${pct}%</span>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+        } else {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);">暂无词书</td></tr>';
+        }
+
+        // 图片文件网格（带缩略图预览）
+        const grid = document.getElementById('image-files-grid');
+        if (data.images && data.images.length > 0) {
+            grid.innerHTML = `
+                <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:12px;">
+                    ${data.images.map(img => `
+                        <div style="border:1px solid var(--gray-200); border-radius:10px; overflow:hidden; background:var(--gray-50);">
+                            <div style="width:100%; height:120px; background:#f0f0f0; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+                                <img src="${API_V1}/media-admin/image-file/${encodeURIComponent(img.name)}"
+                                     style="max-width:100%; max-height:120px; object-fit:contain;"
+                                     onerror="this.parentElement.innerHTML='<span style=color:var(--gray-400);font-size:24px>🖼</span>'" />
+                            </div>
+                            <div style="padding:8px 10px;">
+                                <div style="font-size:12px; font-weight:600; color:var(--gray-700); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(img.word)}">${escapeHtml(img.word)}</div>
+                                <div style="font-size:11px; color:var(--gray-400); margin-top:2px;">${formatSize(img.size)}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>`;
+        } else {
+            grid.innerHTML = '<div style="color:var(--gray-400);text-align:center;padding:24px;">暂无图片文件<br><span style="font-size:12px;">将图片放入 media_storage/image/ 目录，命名为 单词.png</span></div>';
+        }
+    } catch (e) {
+        console.warn('加载图片状态失败:', e);
+        document.getElementById('media-image-count').textContent = '-';
     }
 }
 

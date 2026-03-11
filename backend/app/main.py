@@ -490,12 +490,177 @@ async def check_word_image(
     return {"has_image": img_path is not None, "word": row[0]}
 
 
+# ===== v4.7 图片管理接口 =====
+
+@app.get("/api/v1/media-admin/image-status")
+async def image_status(db: AsyncSession = Depends(get_db)):
+    """图片库统计：总数、总大小、文件列表、每本词书的图片覆盖率"""
+    import time as _time
+
+    image_files = []
+    total_size = 0
+    image_names_lower = {}  # lowercase name -> original filename (for matching)
+
+    exts = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+
+    if os.path.isdir(_IMAGE_DIR):
+        try:
+            for fname in os.listdir(_IMAGE_DIR):
+                fpath = os.path.join(_IMAGE_DIR, fname)
+                if not os.path.isfile(fpath):
+                    continue
+                name_part, fext = os.path.splitext(fname)
+                if fext.lower() not in exts:
+                    continue
+                sz = os.path.getsize(fpath)
+                mtime = os.path.getmtime(fpath)
+                total_size += sz
+                image_files.append({
+                    "name": fname,
+                    "size": sz,
+                    "mtime": mtime,
+                    "word": name_part,
+                })
+                image_names_lower[name_part.lower()] = fname
+        except OSError as e:
+            logger.warning(f"[IMAGE] 读取图片目录失败: {e}")
+
+    # 按修改时间倒序
+    image_files.sort(key=lambda x: x["mtime"], reverse=True)
+
+    # 每本词书的图片覆盖率
+    wordbooks_info = []
+    try:
+        wb_result = await db.execute(select(Wordbook).order_by(Wordbook.name))
+        for wb in wb_result.scalars().all():
+            words_result = await db.execute(
+                select(Word.word)
+                .join(WordbookWord, Word.id == WordbookWord.word_id)
+                .where(WordbookWord.wordbook_id == wb.id)
+            )
+            words = [r[0] for r in words_result.all()]
+            has_image_count = sum(
+                1 for w in words if w.lower() in image_names_lower
+            )
+            wordbooks_info.append({
+                "id": str(wb.id),
+                "name": wb.name or "unnamed",
+                "total": len(words),
+                "has_image": has_image_count,
+            })
+    except Exception as e:
+        logger.warning(f"[IMAGE] 词书查询失败: {e}")
+
+    return _JSONResponse(content={
+        "image_count": len(image_files),
+        "total_size_bytes": total_size,
+        "image_dir": _IMAGE_DIR,
+        "images": [{"name": f["name"], "size": f["size"], "word": f["word"]} for f in image_files[:200]],
+        "wordbooks": wordbooks_info,
+    })
+
+
+@app.get("/api/v1/media-admin/image-file/{filename}")
+async def get_image_file(filename: str):
+    """直接返回图片文件（管理面板预览用）"""
+    if not os.path.isdir(_IMAGE_DIR):
+        raise HTTPException(status_code=404, detail="image dir not found")
+
+    safe_name = os.path.basename(filename)
+    file_path = os.path.join(_IMAGE_DIR, safe_name)
+
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail=f"file not found: {safe_name}")
+
+    ext = os.path.splitext(safe_name)[1].lower()
+    mime = _MIME_MAP.get(ext, "image/png")
+
+    return FileResponse(
+        file_path,
+        media_type=mime,
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+@app.get("/api/v1/media-admin/audio-by-word/{word_text}")
+async def get_audio_by_word(word_text: str):
+    """根据单词文本直接返回音频文件（管理面板用）"""
+    from app.services.media_service import _safe_filename, _get_media_dir
+
+    filename = f"{_safe_filename(word_text)}.mp3"
+    file_path = os.path.join(_get_media_dir("us"), filename)
+
+    if not os.path.isfile(file_path) or os.path.getsize(file_path) < 500:
+        raise HTTPException(status_code=404, detail=f"no audio for: {word_text}")
+
+    return FileResponse(
+        file_path,
+        media_type="audio/mpeg",
+        headers={
+            "Cache-Control": "public, max-age=604800",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+@app.get("/api/v1/media-admin/image-by-word/{word_text}")
+async def get_image_by_word(word_text: str):
+    """根据单词文本直接返回图片文件（管理面板用，自动匹配扩展名）"""
+    img_path = _find_word_image(word_text)
+    if not img_path:
+        raise HTTPException(status_code=404, detail=f"no image for: {word_text}")
+
+    ext = os.path.splitext(img_path)[1].lower()
+    mime = _MIME_MAP.get(ext, "image/png")
+
+    return FileResponse(
+        img_path,
+        media_type=mime,
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+@app.post("/api/v1/media-admin/word-media-batch")
+async def word_media_batch(data: dict = MainBody(...)):
+    """批量检查一组单词的音频/图片状态"""
+    from app.services.media_service import has_cached_audio
+
+    words = data.get("words", [])
+    if not words or not isinstance(words, list):
+        return {"results": {}}
+
+    results = {}
+    for w in words[:200]:  # 限制200个
+        w = str(w).strip()
+        if not w:
+            continue
+        results[w] = {
+            "has_audio": has_cached_audio(w, "us"),
+            "has_image": _find_word_image(w) is not None,
+        }
+    return {"results": results}
+
+
 # ===== 固定端点 =====
 @app.get("/admin", include_in_schema=False)
 async def admin_page():
     admin_html = os.path.join(os.path.dirname(__file__), "static", "admin.html")
     if os.path.exists(admin_html):
-        return FileResponse(admin_html, media_type="text/html")
+        return FileResponse(
+            admin_html,
+            media_type="text/html",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
     return {"error": "admin.html not found"}
 
 
