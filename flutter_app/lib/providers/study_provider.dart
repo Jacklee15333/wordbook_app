@@ -1,6 +1,6 @@
 // ╔═══════════════════════════════════════════════════════════════════════╗
-// ║  study_provider.dart  v4.0  2026-03-10                              ║
-// ║  v4.0: 短语拼写按单词拆分，单词拼写按音节拆分                       ║
+// ║  study_provider.dart  v4.1  2026-03-31                              ║
+// ║  v4.1: 汉选英排除含义相同的干扰项                                  ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
 
 import 'dart:convert';
@@ -11,7 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 
-const String _kVersion = '📦 study_provider v4.0 (2026-03-10) 短语拼写按单词拆+单词按音节拆';
+const String _kVersion = '📦 study_provider v4.1 (2026-03-31) 汉选英排除同义干扰项';
 
 void _log(String msg) {
   debugPrint('[STUDY] $msg');
@@ -875,6 +875,22 @@ class StudyNotifier extends StateNotifier<StudyState> {
     return true;
   }
 
+  /// ★ v4.1: 去掉词性前缀，只保留纯中文部分用于含义比较
+  /// 例如 "n. 桌子" → "桌子"，"做某事怎么样？" → "做某事怎么样？"
+  String _normalizeMeaningForCompare(String meaning) {
+    if (meaning.isEmpty) return '';
+    // 去掉所有词性前缀（可能有多个义项用；分隔）
+    final parts = meaning.split('；').map((part) {
+      final trimmed = part.trim();
+      final posMatch = _posAbbrRe.firstMatch(trimmed);
+      if (posMatch != null) {
+        return trimmed.substring(posMatch.end).trim();
+      }
+      return trimmed;
+    }).where((s) => s.isNotEmpty).toList();
+    return parts.join('；');
+  }
+
   String _ensureValidMeaning(String wordText, String meaning) {
     if (_isValidMeaning(meaning)) return meaning;
     // 从 fallback 查找
@@ -930,7 +946,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
       ChoiceOption(text: wordText, subText: meaning, isCorrect: true),
     ];
 
-    final distractors = _getEnglishDistractorsWithMeaning(wordId, wordText, 3);
+    final distractors = _getEnglishDistractorsWithMeaning(wordId, wordText, meaning, 3);
     options.addAll(distractors);
 
     options.shuffle(_random);
@@ -1271,13 +1287,16 @@ class StudyNotifier extends StateNotifier<StudyState> {
 
   /// 汉选英的干扰项：返回 ChoiceOption(text=英文单词, subText=中文释义)
   /// ★ v3.5: 三类匹配 — 单词配单词，短语配短语，词缀配词缀
+  /// ★ v4.1: 排除含义相同的干扰项，避免同义选项导致误判
   List<ChoiceOption> _getEnglishDistractorsWithMeaning(
-      String currentWordId, String correctWord, int count) {
+      String currentWordId, String correctWord, String correctMeaning, int count) {
     final results = <ChoiceOption>[];
     final usedWords = <String>{correctWord.toLowerCase()};
     final correctType = _getWordType(correctWord);
+    // ★ v4.1: 标准化正确答案的含义，用于排除同义干扰项
+    final normalizedCorrectMeaning = _normalizeMeaningForCompare(correctMeaning);
 
-    _log('🎲 汉选英干扰项: "$correctWord" type=$correctType');
+    _log('🎲 汉选英干扰项: "$correctWord" type=$correctType meaning="$correctMeaning"');
 
     // 第一轮：从同批次取相同类型
     final candidates = state.allCards.where((card) {
@@ -1294,6 +1313,11 @@ class StudyNotifier extends StateNotifier<StudyState> {
       // ★ 类型匹配
       if (_getWordType(w) != correctType) continue;
       final m = _extractMeaning(word);
+      // ★ v4.1: 排除含义相同的干扰项
+      if (_isValidMeaning(m) && _normalizeMeaningForCompare(m) == normalizedCorrectMeaning) {
+        _log('🚫 排除同义干扰项: "$w" meaning="$m"');
+        continue;
+      }
       final validM = _isValidMeaning(m) ? m : null;
       results.add(ChoiceOption(text: w, subText: validM));
       usedWords.add(w.toLowerCase());
@@ -1308,6 +1332,8 @@ class StudyNotifier extends StateNotifier<StudyState> {
         final w = fb['word']!;
         final m = fb['meaning']!;
         if (!usedWords.contains(w.toLowerCase())) {
+          // ★ v4.1: fallback 也要排除同义
+          if (_isValidMeaning(m) && _normalizeMeaningForCompare(m) == normalizedCorrectMeaning) continue;
           results.add(ChoiceOption(text: w, subText: m));
           usedWords.add(w.toLowerCase());
         }
@@ -1322,6 +1348,11 @@ class StudyNotifier extends StateNotifier<StudyState> {
         final w = word['word'] as String? ?? '';
         if (w.isEmpty || usedWords.contains(w.toLowerCase())) continue;
         final m = _extractMeaning(word);
+        // ★ v4.1: 第三轮也要排除同义
+        if (_isValidMeaning(m) && _normalizeMeaningForCompare(m) == normalizedCorrectMeaning) {
+          _log('🚫 排除同义干扰项(第三轮): "$w" meaning="$m"');
+          continue;
+        }
         final validM = _isValidMeaning(m) ? m : null;
         results.add(ChoiceOption(text: w, subText: validM));
         usedWords.add(w.toLowerCase());

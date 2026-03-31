@@ -4,6 +4,7 @@ v4.7: 新增单词图片接口 /media/{word_id}/image
 v4.8: 修复音标问题 — 新增批量修复接口 /api/v1/admin/fix-phonetics
 """
 import os
+import re
 import glob
 import json
 import uuid as uuid_mod
@@ -398,27 +399,37 @@ _IMAGE_DIR = os.path.join(
 )
 
 
+def _normalize_for_filename(text: str) -> str:
+    """去掉 Windows 文件名不允许的字符，用于匹配比较。
+    Windows 不允许: \\ / : * ? \" < > |
+    """
+    return re.sub(r'[\\/:*?"<>|]', '', text).strip().lower()
+
+
 def _find_word_image(word_text: str) -> str | None:
     """在 media_storage/image/ 目录中查找单词对应的图片文件。
-    支持 png/jpg/jpeg/gif/webp，优先精确匹配，再 case-insensitive。
+    支持 png/jpg/jpeg/gif/webp。
+    ★ v4.8: 匹配时去掉 Windows 非法文件名字符（如 ? ! 等），
+    解决数据库中 "what about doing sth.?" 匹配不到
+    文件名 "What about doing sth..png" 的问题。
     """
     if not os.path.isdir(_IMAGE_DIR):
         return None
 
     exts = (".png", ".jpg", ".jpeg", ".gif", ".webp")
 
-    # 1) 精确匹配
+    # 1) 精确匹配（原始 word_text 直接拼文件名）
     for ext in exts:
         path = os.path.join(_IMAGE_DIR, f"{word_text}{ext}")
         if os.path.isfile(path):
             return path
 
-    # 2) case-insensitive 匹配
-    lower = word_text.lower()
+    # 2) 标准化匹配：去掉非法字符 + case-insensitive
+    normalized = _normalize_for_filename(word_text)
     try:
         for fname in os.listdir(_IMAGE_DIR):
             name_part, fext = os.path.splitext(fname)
-            if fext.lower() in exts and name_part.lower() == lower:
+            if fext.lower() in exts and _normalize_for_filename(name_part) == normalized:
                 return os.path.join(_IMAGE_DIR, fname)
     except OSError:
         pass
