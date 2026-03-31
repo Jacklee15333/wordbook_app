@@ -3,6 +3,9 @@
 文件位置: app/api/admin.py
 
 ★★★ 关键：vocabulary_service 等重依赖在函数体内懒加载 ★★★
+
+v4.8: 修复音标问题
+  - approve_import_item 正确设置 phonetic_us / phonetic_uk
 """
 import uuid
 import logging
@@ -321,7 +324,7 @@ async def approve_import_item(
     data: dict = Body(default={}),
     db: AsyncSession = Depends(get_db)
 ):
-    """审核通过并入库"""
+    """审核通过并入库 ★ v4.8: 正确设置 phonetic_us / phonetic_uk"""
     try:
         Word, _, ImportTask, ImportItem = _get_models()
         vocab_service = _get_vocab_service()
@@ -342,11 +345,20 @@ async def approve_import_item(
     word_text = item.word_text.strip().lower()
     meaning = generated_data.get("meaning", item.vocabulary_meaning or "")
 
+    # ★ v4.8: 提取音标（支持 phonetic_us/phonetic_uk 和旧的 phonetic 字段）
+    phonetic_us = generated_data.get("phonetic_us", "")
+    phonetic_uk = generated_data.get("phonetic_uk", "")
+    phonetic_generic = generated_data.get("phonetic", "")
+    if not phonetic_us:
+        phonetic_us = phonetic_generic
+    if not phonetic_uk:
+        phonetic_uk = phonetic_generic
+
     # 1. 写入 vocabulary.db
     vocab_service.add_word(
         word=word_text,
         meaning=meaning,
-        phonetic=generated_data.get("phonetic", ""),
+        phonetic=phonetic_us or phonetic_uk or phonetic_generic,
         difficulty=generated_data.get("difficulty", ""),
         examples=str(generated_data.get("examples", "")),
         added_from="ai_approved"
@@ -358,18 +370,23 @@ async def approve_import_item(
 
     if existing_word:
         word_id = existing_word.id
+        # ★ v4.8: 如果已有记录没有音标，补上
+        if not existing_word.phonetic_us and phonetic_us:
+            existing_word.phonetic_us = phonetic_us
+        if not existing_word.phonetic_uk and phonetic_uk:
+            existing_word.phonetic_uk = phonetic_uk
     else:
         word_id = uuid.uuid4()
         new_word = Word(
             id=word_id,
             word=word_text,
+            phonetic_us=phonetic_us,     # ★ v4.8
+            phonetic_uk=phonetic_uk,     # ★ v4.8
             definitions=generated_data.get("definitions", [{"pos": "", "cn": meaning}]),
             is_reviewed=True,
             review_status="approved",
             ai_generated=True,
         )
-        if generated_data.get("phonetic") and hasattr(new_word, 'phonetic_us'):
-            new_word.phonetic_us = generated_data.get("phonetic")
         db.add(new_word)
 
     # 3. 更新导入项

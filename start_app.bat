@@ -227,6 +227,15 @@ REM ============================================
 REM  [6/7] Start backend
 REM ============================================
 echo [6/7] Starting backend...
+echo   Checking eng_to_ipa library...
+cd /d %BACKEND_DIR%
+call venv\Scripts\activate
+pip show eng-to-ipa >nul 2>&1
+if errorlevel 1 (
+    echo   Installing eng_to_ipa...
+    pip install eng-to-ipa >nul 2>&1
+)
+echo   eng_to_ipa OK.
 start "WordBook Backend" cmd /k "title WordBook Backend && cd /d %BACKEND_DIR% && call venv\Scripts\activate && python -m uvicorn app.main:app --host 127.0.0.1 --port !BACKEND_PORT! --log-level info"
 
 echo   Waiting for backend...
@@ -248,6 +257,14 @@ goto :wait_loop
 echo.
 
 REM ============================================
+REM  [6.5/7] Auto-fix missing phonetics
+REM ============================================
+echo [6.5/7] Auto-fixing missing phonetics...
+curl -s -X POST http://localhost:!BACKEND_PORT!/api/v1/admin/fix-phonetics >nul 2>&1
+echo   Phonetics fix triggered (runs in background).
+echo.
+
+REM ============================================
 REM  [7/7] Start frontend
 REM ============================================
 echo [7/7] Starting frontend...
@@ -261,7 +278,7 @@ if not exist "%FRONTEND_DIR%\.dart_tool" (
 )
 
 echo   Launching Flutter Web on port 3000...
-start "WordBook Frontend" cmd /k "title WordBook Frontend && cd /d %FRONTEND_DIR% && flutter run -d chrome --web-port 3000"
+start "WordBook Frontend" cmd /k "title WordBook Frontend && cd /d %FRONTEND_DIR% && flutter run -d chrome --web-port 3000 --web-renderer html"
 
 echo   Waiting for frontend (may take a while)...
 set fe_attempts=0
