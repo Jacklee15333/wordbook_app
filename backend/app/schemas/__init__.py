@@ -82,6 +82,7 @@ class WordResponse(BaseModel):
     frequency_level: Optional[str]
     difficulty_level: Optional[str]
     is_reviewed: bool
+    syllables: Optional[list[str]] = None  # ★ v5.0: 音节拆分
 
     class Config:
         from_attributes = True

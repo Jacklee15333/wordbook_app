@@ -1,6 +1,6 @@
 // ╔═══════════════════════════════════════════════════════════════════════╗
-// ║  study_screen.dart  v4.7  2026-03-11                                ║
-// ║  v4.7: 单词学习界面加载本地图片（media_storage/image）              ║
+// ║  study_screen.dart  v5.0  2026-04-01                                ║
+// ║  v5.0: 单词学习界面音节拆分动画（pyphen 专业音节数据）              ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
 
 import 'dart:html' as html;
@@ -26,6 +26,14 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   html.AudioElement? _audioElement;
   bool _isPlaying = false;
   String _lastAutoPlayedKey = '';
+
+  // ★ v5.0: 音节拆分动画状态
+  List<String> _syllables = [];
+  // idle → firstPlay → pause → animating → done
+  String _syllablePhase = 'idle';
+  int _activeSyllableIndex = -1;
+  bool _syllablesExpanded = false;
+  String _lastDetailWordId = '';
 
   @override
   void dispose() {
@@ -65,6 +73,182 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) _playWord(wordId);
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ★ v5.0: 音节拆分动画序列
+  // 流程: 播放第一遍 → 停顿 → 音节展开 → 播放第二遍 + 逐个高亮
+  // ═══════════════════════════════════════════════════════════════════════
+
+  void _startSyllableSequence(String wordId, List<String> syllables) {
+    if (syllables.length <= 1 || wordId.isEmpty) return;
+    if (_lastDetailWordId == wordId) return; // 同一单词不重复
+    _lastDetailWordId = wordId;
+
+    _syllables = syllables;
+    _syllablePhase = 'firstPlay';
+    _activeSyllableIndex = -1;
+    _syllablesExpanded = false;
+
+    final url = '${ApiConfig.baseUrl}/media/$wordId/audio?accent=us';
+
+    // ── 第一遍播放 ──
+    _audioElement?.pause();
+    _audioElement = html.AudioElement(url);
+    setState(() => _isPlaying = true);
+
+    _audioElement!.onEnded.listen((_) {
+      if (!mounted || _syllablePhase != 'firstPlay') return;
+      setState(() {
+        _isPlaying = false;
+        _syllablePhase = 'pause';
+      });
+
+      // ── 停顿 800ms ──
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (!mounted || _syllablePhase != 'pause') return;
+
+        // ── 先展开音节（间距动画） ──
+        setState(() {
+          _syllablePhase = 'animating';
+          _syllablesExpanded = true;
+        });
+
+        // ── 展开动画完成后播放第二遍 + 高亮 ──
+        Future.delayed(const Duration(milliseconds: 450), () {
+          if (!mounted || _syllablePhase != 'animating') return;
+
+          final audio2 = html.AudioElement(url);
+          _audioElement = audio2;
+          setState(() => _isPlaying = true);
+
+          // 监听 metadata 获取真实时长
+          audio2.onLoadedMetadata.listen((_) {
+            final dur = audio2.duration;
+            if (dur != null && !dur.isNaN && dur > 0) {
+              _scheduleSyllableHighlights((dur * 1000).round());
+            } else {
+              _scheduleSyllableHighlights(null);
+            }
+          });
+
+          audio2.onEnded.listen((_) {
+            if (mounted) setState(() => _isPlaying = false);
+          });
+          audio2.onError.listen((_) {
+            if (mounted) setState(() => _isPlaying = false);
+          });
+
+          audio2.play();
+        });
+      });
+    });
+
+    _audioElement!.onError.listen((_) {
+      if (mounted) setState(() {
+        _isPlaying = false;
+        _syllablePhase = 'idle';
+      });
+    });
+
+    _audioElement!.play();
+  }
+
+  void _scheduleSyllableHighlights(int? audioDurationMs) {
+    final totalChars = _syllables.join('').length;
+    // 用真实时长或估算值（每个字符 ~80ms + 300ms 基础）
+    final totalMs = audioDurationMs ?? (totalChars * 80 + 300);
+
+    int elapsed = 100; // 起始延迟
+    for (int i = 0; i < _syllables.length; i++) {
+      final ratio = _syllables[i].length / totalChars;
+      final syllableMs = (totalMs * ratio).round().clamp(150, 800);
+      final capturedIndex = i;
+
+      Future.delayed(Duration(milliseconds: elapsed), () {
+        if (mounted && _syllablePhase == 'animating') {
+          setState(() => _activeSyllableIndex = capturedIndex);
+        }
+      });
+      elapsed += syllableMs;
+    }
+
+    // 高亮结束 → done 状态
+    Future.delayed(Duration(milliseconds: elapsed + 400), () {
+      if (mounted) {
+        setState(() {
+          _syllablePhase = 'done';
+          _activeSyllableIndex = -1;
+        });
+      }
+    });
+  }
+
+  /// ★ v5.0: 音节动画单词显示 — 替代静态 Text
+  Widget _buildAnimatedWordText(String wordText, String wordId) {
+    final showSplit = (_syllablePhase == 'animating' || _syllablePhase == 'done')
+        && _syllables.length > 1;
+
+    // 未开始或无音节数据 → 静态显示
+    if (!showSplit) {
+      return Text(
+        wordText,
+        style: const TextStyle(
+          fontSize: 34, fontWeight: FontWeight.w800,
+          color: Colors.white, letterSpacing: -0.5,
+          shadows: [Shadow(blurRadius: 10, color: Colors.black54, offset: Offset(0, 2))],
+        ),
+      );
+    }
+
+    // 音节拆分显示
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        for (int i = 0; i < _syllables.length; i++) ...[
+          // 分隔符（从第二个音节开始）
+          if (i > 0)
+            AnimatedOpacity(
+              opacity: _syllablesExpanded ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 350),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Text(
+                  ' · ',
+                  style: TextStyle(
+                    fontSize: 28, fontWeight: FontWeight.w400,
+                    color: Colors.white.withOpacity(0.5),
+                  ),
+                ),
+              ),
+            ),
+          // 音节文字
+          AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 250),
+            style: TextStyle(
+              fontSize: _activeSyllableIndex == i ? 38 : 34,
+              fontWeight: FontWeight.w800,
+              color: _activeSyllableIndex == i
+                  ? const Color(0xFFFFD54F) // 高亮黄金色
+                  : Colors.white,
+              letterSpacing: -0.3,
+              shadows: [
+                Shadow(
+                  blurRadius: _activeSyllableIndex == i ? 16 : 10,
+                  color: _activeSyllableIndex == i
+                      ? const Color(0xFFFFD54F).withOpacity(0.5)
+                      : Colors.black54,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Text(_syllables[i]),
+          ),
+        ],
+      ],
+    );
   }
 
   /// 构建小型发音按钮（放在单词右侧）
@@ -224,6 +408,13 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     final isCnToEn = question.step == TestStep.cnToEn;
     final isSpelling = question.step == TestStep.spelling;
 
+    // ★ v5.1: 判断是否显示音节拆分（英→汉时，单个单词且有音节数据）
+    final showSyllableDot = isEnToCn
+        && question.syllables.length > 1
+        && !question.word.contains(' ')
+        && !question.word.startsWith('-')
+        && !question.word.endsWith('-');
+
     return Card(
       child: Container(
         width: double.infinity,
@@ -232,22 +423,34 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
           children: [
             const SizedBox(height: 8),
             if (isEnToCn || isSpelling) ...[
-              // ★ v4.5: 单词 + 喇叭横排
+              // ★ v5.1: 单词 + 喇叭横排（支持音节拆分展示）
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Flexible(
-                    child: Text(
-                      isSpelling ? question.meaning : question.word,
-                      style: TextStyle(
-                        fontSize: isSpelling ? 20 : 32,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
-                        letterSpacing: isSpelling ? 0 : -0.5,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
+                    child: isSpelling
+                      ? Text(
+                          question.meaning,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                          ),
+                          textAlign: TextAlign.center,
+                        )
+                      : showSyllableDot
+                        ? _buildSyllableDotText(question.syllables, 32)
+                        : Text(
+                            question.word,
+                            style: const TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textPrimary,
+                              letterSpacing: -0.5,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
                   ),
                   if (isEnToCn) _buildPlayButton(question.wordId),
                 ],
@@ -276,6 +479,37 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ★ v5.1: 音节圆点分隔展示（用于测试页面）
+  // ═══════════════════════════════════════════════════════════════════════
+
+  Widget _buildSyllableDotText(List<String> syllables, double fontSize) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (int i = 0; i < syllables.length; i++) ...[
+          if (i > 0) Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: Text('·',
+              style: TextStyle(
+                fontSize: fontSize,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          Text(syllables[i],
+            style: TextStyle(
+              fontSize: fontSize,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -745,6 +979,24 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
         ? '${ApiConfig.baseUrl}/media/$wordId/image'
         : '';
 
+    // ★ v5.0: 提取音节数据并触发动画序列
+    final rawSyllables = word['syllables'] as List?;
+    final syllables = rawSyllables?.map((s) => s.toString()).toList() ?? <String>[];
+    // 仅对单个英文单词触发（不含空格、不含连字符开头/结尾）
+    final shouldAnimate = syllables.length > 1
+        && !wordText.contains(' ')
+        && !wordText.startsWith('-')
+        && !wordText.endsWith('-');
+    if (shouldAnimate && _lastDetailWordId != wordId) {
+      Future.microtask(() => _startSyllableSequence(wordId, syllables));
+    } else if (!shouldAnimate && _lastDetailWordId != wordId) {
+      // 短语/词缀等不做动画，正常自动播放一次
+      _lastDetailWordId = wordId;
+      _syllablePhase = 'idle';
+      _syllables = [];
+      _autoPlay('detail_$wordId', wordId);
+    }
+
     // ★ v4.7: 提取简短释义（显示在单词右侧）
     String briefMeaning = '';
     for (final def in definitions.take(2)) {
@@ -880,14 +1132,9 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              // 单词
-                              Text(
-                                wordText,
-                                style: const TextStyle(
-                                  fontSize: 34, fontWeight: FontWeight.w800,
-                                  color: Colors.white, letterSpacing: -0.5,
-                                  shadows: [Shadow(blurRadius: 10, color: Colors.black54, offset: Offset(0, 2))],
-                                ),
+                              // ★ v5.0: 音节动画单词
+                              Flexible(
+                                child: _buildAnimatedWordText(wordText, wordId),
                               ),
                               const SizedBox(width: 8),
                               // 喇叭
@@ -1012,6 +1259,12 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                   _selectedOptionIndex = null;
                   _selectedLetters = [];
                   _letterUsed = [];
+                  // ★ v5.0: 重置音节动画状态
+                  _syllablePhase = 'idle';
+                  _syllables = [];
+                  _activeSyllableIndex = -1;
+                  _syllablesExpanded = false;
+                  _lastDetailWordId = '';
                 });
                 if (study.isComplete) {
                   Navigator.pop(context);

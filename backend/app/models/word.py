@@ -28,6 +28,7 @@ class Word(Base):
     is_reviewed = Column(Boolean, default=False)
     review_status = Column(String(20), default="pending")
     ai_generated = Column(Boolean, default=False)
+    syllables = Column(JSONB, default=None)  # ★ v5.0: 音节拆分 ["ac","cep","tance"]
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

@@ -3,7 +3,7 @@ title WordBook Launcher
 
 echo.
 echo ============================================
-echo   WordBook App - Smart Startup v4.7
+echo   WordBook App - Smart Startup v5.0
 echo ============================================
 echo.
 
@@ -33,6 +33,7 @@ REM  [2/7] Apply updates from updates/ folder
 REM ============================================
 echo [2/7] Checking updates folder...
 set UPDATED=0
+set DEPS_UPDATED=0
 set UPDATE_LIST=
 
 if not exist "%UPDATES_DIR%" (
@@ -158,6 +159,63 @@ if exist "%UPDATES_DIR%\pubspec.yaml" (
     set UPDATED=1
 )
 
+REM --- v5.0: backend model / schema / dependency files ---
+
+if exist "%UPDATES_DIR%\word.py" (
+    copy /Y "%UPDATES_DIR%\word.py" "%BACKEND_DIR%\app\models\word.py" >nul
+    echo   [OK] word.py  -^>  backend\app\models\word.py
+    set UPDATED=1
+)
+
+if exist "%UPDATES_DIR%\schemas__init__.py" (
+    copy /Y "%UPDATES_DIR%\schemas__init__.py" "%BACKEND_DIR%\app\schemas\__init__.py" >nul
+    echo   [OK] schemas__init__.py  -^>  backend\app\schemas\__init__.py
+    set UPDATED=1
+)
+
+if exist "%UPDATES_DIR%\requirements.txt" (
+    copy /Y "%UPDATES_DIR%\requirements.txt" "%BACKEND_DIR%\requirements.txt" >nul
+    echo   [OK] requirements.txt  -^>  backend\requirements.txt
+    set UPDATED=1
+    set DEPS_UPDATED=1
+)
+
+if exist "%UPDATES_DIR%\fill_syllables.py" (
+    copy /Y "%UPDATES_DIR%\fill_syllables.py" "%BACKEND_DIR%\fill_syllables.py" >nul
+    echo   [OK] fill_syllables.py  -^>  backend\fill_syllables.py
+    set UPDATED=1
+)
+
+if exist "%UPDATES_DIR%\study.py" (
+    copy /Y "%UPDATES_DIR%\study.py" "%BACKEND_DIR%\app\api\study.py" >nul
+    echo   [OK] study.py  -^>  backend\app\api\study.py
+    set UPDATED=1
+)
+
+if exist "%UPDATES_DIR%\import_processor.py" (
+    copy /Y "%UPDATES_DIR%\import_processor.py" "%BACKEND_DIR%\app\services\import_processor.py" >nul
+    echo   [OK] import_processor.py  -^>  backend\app\services\import_processor.py
+    set UPDATED=1
+)
+
+if exist "%UPDATES_DIR%\words.py" (
+    copy /Y "%UPDATES_DIR%\words.py" "%BACKEND_DIR%\app\api\words.py" >nul
+    echo   [OK] words.py  -^>  backend\app\api\words.py
+    set UPDATED=1
+)
+
+if exist "%UPDATES_DIR%\word_media.py" (
+    copy /Y "%UPDATES_DIR%\word_media.py" "%BACKEND_DIR%\app\models\word_media.py" >nul
+    echo   [OK] word_media.py  -^>  backend\app\models\word_media.py
+    set UPDATED=1
+)
+
+if exist "%UPDATES_DIR%\security.py" (
+    copy /Y "%UPDATES_DIR%\security.py" "%BACKEND_DIR%\app\core\security.py" >nul
+    echo   [OK] security.py  -^>  backend\app\core\security.py
+    set UPDATED=1
+)
+
 REM --- Directory structure copy (advanced) ---
 
 if exist "%UPDATES_DIR%\backend" (
@@ -227,15 +285,42 @@ REM ============================================
 REM  [6/7] Start backend
 REM ============================================
 echo [6/7] Starting backend...
-echo   Checking eng_to_ipa library...
 cd /d %BACKEND_DIR%
 call venv\Scripts\activate
+
+REM --- Check and install all pip dependencies ---
+echo   Checking Python dependencies...
+if !DEPS_UPDATED!==1 (
+    echo   requirements.txt updated, installing all dependencies...
+    pip install -r requirements.txt >nul 2>&1
+    echo   Dependencies installed from requirements.txt.
+) else (
+    REM Quick check: verify a few key packages are present
+    set NEED_INSTALL=0
+    pip show pyphen >nul 2>&1
+    if errorlevel 1 set NEED_INSTALL=1
+    pip show eng-to-ipa >nul 2>&1
+    if errorlevel 1 set NEED_INSTALL=1
+    pip show fastapi >nul 2>&1
+    if errorlevel 1 set NEED_INSTALL=1
+
+    if !NEED_INSTALL!==1 (
+        echo   Some packages missing, installing from requirements.txt...
+        pip install -r requirements.txt >nul 2>&1
+        pip install eng-to-ipa >nul 2>&1
+        echo   Dependencies installed.
+    ) else (
+        echo   All dependencies OK.
+    )
+)
+
+REM --- Also ensure eng-to-ipa (not in requirements.txt) ---
 pip show eng-to-ipa >nul 2>&1
 if errorlevel 1 (
-    echo   Installing eng_to_ipa...
+    echo   Installing eng-to-ipa...
     pip install eng-to-ipa >nul 2>&1
 )
-echo   eng_to_ipa OK.
+
 start "WordBook Backend" cmd /k "title WordBook Backend && cd /d %BACKEND_DIR% && call venv\Scripts\activate && python -m uvicorn app.main:app --host 127.0.0.1 --port !BACKEND_PORT! --log-level info"
 
 echo   Waiting for backend...
@@ -337,6 +422,7 @@ if !UPDATED!==1 (
         del /Q "%UPDATES_DIR%\*.py" >nul 2>&1
         del /Q "%UPDATES_DIR%\*.dart" >nul 2>&1
         del /Q "%UPDATES_DIR%\*.yaml" >nul 2>&1
+        del /Q "%UPDATES_DIR%\*.txt" >nul 2>&1
         if exist "%UPDATES_DIR%\backend" rd /s /q "%UPDATES_DIR%\backend" >nul 2>&1
         if exist "%UPDATES_DIR%\flutter_app" rd /s /q "%UPDATES_DIR%\flutter_app" >nul 2>&1
         echo   Done! Updates folder cleaned.

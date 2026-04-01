@@ -2,6 +2,7 @@
 背单词 App - 后端服务入口
 v4.7: 新增单词图片接口 /media/{word_id}/image
 v4.8: 修复音标问题 — 新增批量修复接口 /api/v1/admin/fix-phonetics
+v5.0: 音节拆分 — pyphen 自动填充 syllables 字段 + 图片匹配标准化
 """
 import os
 import re
@@ -13,11 +14,11 @@ import traceback
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.database import get_db, safe_auto_migrate
+from app.core.database import get_db, safe_auto_migrate, engine, async_session
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.word import Wordbook, Word, WordbookWord
@@ -881,12 +882,100 @@ async def admin_page():
 
 @app.get("/")
 async def root():
-    return {"app": "WordBook API", "version": "4.8.0"}
+    return {"app": "WordBook API", "version": "5.0.0"}
 
 
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+
+# ═══════════════════════════════════════════════════════════════
+# ★ v5.0: 音节拆分 — pyphen 自动填充
+# ═══════════════════════════════════════════════════════════════
+
+def _get_syllables(word_text: str) -> list[str] | None:
+    """用 pyphen 获取单词的音节拆分，仅对单个英文单词有效"""
+    # 跳过短语、词缀、句型
+    if ' ' in word_text or word_text.startswith('-') or word_text.endswith('-'):
+        return None
+    # 跳过包含特殊字符的
+    if not re.match(r'^[a-zA-Z]+$', word_text):
+        return None
+    try:
+        import pyphen
+        dic = pyphen.Pyphen(lang='en_US')
+        parts = dic.inserted(word_text.lower()).split('-')
+        return parts if len(parts) > 1 else None
+    except ImportError:
+        return None
+    except Exception as e:
+        logger.warning(f"[SYLLABLES] pyphen error for '{word_text}': {e}")
+        return None
+
+
+async def _ensure_syllables_column():
+    """启动时自动添加 syllables 列（如果不存在）"""
+    try:
+        async with engine.begin() as conn:
+            result = await conn.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='words' AND column_name='syllables'"
+            ))
+            if result.first() is None:
+                await conn.execute(text(
+                    "ALTER TABLE words ADD COLUMN syllables JSONB"
+                ))
+                logger.info("[MIGRATE] ✅ Added syllables column to words table")
+            else:
+                logger.info("[MIGRATE] syllables column already exists")
+    except Exception as e:
+        logger.warning(f"[MIGRATE] syllables column check/add failed: {e}")
+
+
+async def _fill_missing_syllables():
+    """后台填充所有缺少音节数据的单词"""
+    try:
+        import pyphen
+    except ImportError:
+        logger.warning("[SYLLABLES] pyphen not installed, run: pip install pyphen")
+        return
+
+    try:
+        dic = pyphen.Pyphen(lang='en_US')
+        async with async_session() as session:
+            result = await session.execute(
+                select(Word.id, Word.word).where(Word.syllables.is_(None))
+            )
+            words = result.all()
+            if not words:
+                logger.info("[SYLLABLES] All words already have syllables data")
+                return
+
+            count = 0
+            for word_id, word_text in words:
+                syllables = _get_syllables(word_text)
+                if syllables:
+                    await session.execute(
+                        update(Word).where(Word.id == word_id)
+                        .values(syllables=syllables)
+                    )
+                    count += 1
+
+            await session.commit()
+            logger.info(f"[SYLLABLES] ✅ Filled {count}/{len(words)} words with syllable data")
+    except Exception as e:
+        logger.error(f"[SYLLABLES] fill error: {e}")
+
+
+@app.post("/api/v1/admin/fill-syllables")
+async def fill_syllables_endpoint(
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+):
+    """手动触发音节数据填充（管理员接口）"""
+    background_tasks.add_task(_fill_missing_syllables)
+    return {"message": "syllables fill started in background"}
 
 
 @app.on_event("startup")
@@ -897,8 +986,17 @@ async def startup_event():
     except Exception as e:
         logger.error(f"自动建表出错（不影响启动）: {e}")
 
+    # ★ v5.0: 确保 syllables 列存在，并后台填充
+    try:
+        await _ensure_syllables_column()
+    except Exception as e:
+        logger.warning(f"syllables 列迁移失败: {e}")
+
+    import asyncio
+    asyncio.create_task(_fill_missing_syllables())
+
     logger.info("=" * 50)
-    logger.info("ROUTE LIST v4.8.0 (media-direct + image + phonetics fix):")
+    logger.info("ROUTE LIST v5.0 (syllable animation):")
     for route in app.routes:
         if hasattr(route, 'methods') and hasattr(route, 'path'):
             methods = ','.join(route.methods)
