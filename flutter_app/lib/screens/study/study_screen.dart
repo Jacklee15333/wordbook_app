@@ -29,14 +29,15 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
 
   // ★ v5.0: 音节拆分动画状态（详情页用）
   List<String> _syllables = [];
-  // idle → firstPlay → pause → animating → done
+  // idle → firstPlay → pause → animating → done → morpheme
   String _syllablePhase = 'idle';
   int _activeSyllableIndex = -1;
   bool _syllablesExpanded = false;
   String _lastDetailWordId = '';
+  List<Map<String, dynamic>> _detailMorphemes = []; // ★ v5.2
 
-  // ★ v5.1: 测试页面音节动画状态
-  // whole → split
+  // ★ v5.2: 测试页面动画状态
+  // whole → split → morpheme
   String _quizSyllablePhase = 'whole';
   String _lastQuizWordId = '';
 
@@ -81,11 +82,11 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // ★ v5.1: 测试页面音节动画序列
-  // 流程: 显示整词 + 播放第一遍 → 停顿0.8s → 显示拆分 + 播放第二遍
+  // ★ v5.2: 测试页面动画序列
+  // 流程: 整词+播放 → 0.8s → 音节拆分+播放 → 0.8s → 词根词缀展示
   // ═══════════════════════════════════════════════════════════════════════
 
-  void _startQuizSyllableSequence(String wordId) {
+  void _startQuizSyllableSequence(String wordId, {bool hasMorphemes = false}) {
     final key = 'quiz_syl_$wordId';
     if (key == _lastAutoPlayedKey || wordId.isEmpty) return;
     _lastAutoPlayedKey = key;
@@ -105,7 +106,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
         if (!mounted) return;
         setState(() => _isPlaying = false);
 
-        // ── 停顿0.8s后切换到拆分显示 + 播放第二遍 ──
+        // ── 停顿0.8s后切换到音节拆分 + 播放第二遍 ──
         Future.delayed(const Duration(milliseconds: 800), () {
           if (!mounted || _lastQuizWordId != wordId) return;
           setState(() => _quizSyllablePhase = 'split');
@@ -118,9 +119,21 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
             setState(() => _isPlaying = true);
             _audioElement!.onEnded.listen((_) {
               if (mounted) setState(() => _isPlaying = false);
+              // ── 第二遍播完后，如果有词根词缀数据，停顿0.8s后展示 ──
+              if (hasMorphemes) {
+                Future.delayed(const Duration(milliseconds: 800), () {
+                  if (!mounted || _lastQuizWordId != wordId) return;
+                  setState(() => _quizSyllablePhase = 'morpheme');
+                });
+              }
             });
             _audioElement!.onError.listen((_) {
-              if (mounted) setState(() => _isPlaying = false);
+              if (mounted) {
+                setState(() => _isPlaying = false);
+                if (hasMorphemes) {
+                  setState(() => _quizSyllablePhase = 'morpheme');
+                }
+              }
             });
             _audioElement!.play();
           });
@@ -131,7 +144,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
         if (!mounted) return;
         setState(() {
           _isPlaying = false;
-          _quizSyllablePhase = 'split'; // 播放失败也切换到拆分
+          _quizSyllablePhase = 'split';
         });
       });
 
@@ -237,19 +250,32 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
       elapsed += syllableMs;
     }
 
-    // 高亮结束 → done 状态
+    // 高亮结束 → done 状态 → 0.8s后 → morpheme 状态
     Future.delayed(Duration(milliseconds: elapsed + 400), () {
       if (mounted) {
         setState(() {
           _syllablePhase = 'done';
           _activeSyllableIndex = -1;
         });
+        // ★ v5.2: 如果有词根词缀数据，等0.8s后切换到构词法展示
+        if (_detailMorphemes.isNotEmpty) {
+          Future.delayed(const Duration(milliseconds: 800), () {
+            if (mounted && _syllablePhase == 'done') {
+              setState(() => _syllablePhase = 'morpheme');
+            }
+          });
+        }
       }
     });
   }
 
   /// ★ v5.0: 音节动画单词显示 — 替代静态 Text
   Widget _buildAnimatedWordText(String wordText, String wordId) {
+    // ★ v5.2: 词根词缀阶段 → 显示构词法拆解（详情页白色版本）
+    if (_syllablePhase == 'morpheme' && _detailMorphemes.isNotEmpty) {
+      return _buildDetailMorphemeText(_detailMorphemes);
+    }
+
     final showSplit = (_syllablePhase == 'animating' || _syllablePhase == 'done')
         && _syllables.length > 1;
 
@@ -311,6 +337,74 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
             child: Text(_syllables[i]),
           ),
         ],
+      ],
+    );
+  }
+
+  /// ★ v5.2: 详情页词根词缀展示（白色系，适合背景图片上叠加）
+  static const _detailMorphemeColors = {
+    'prefix': Color(0xFF90CAF9),  // 浅蓝
+    'root':   Color(0xFFFFD54F),  // 金黄
+    'suffix': Color(0xFFA5D6A7),  // 浅绿
+  };
+
+  Widget _buildDetailMorphemeText(List<Map<String, dynamic>> morphemes) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 第一行：彩色词素拆分
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (int i = 0; i < morphemes.length; i++) ...[
+              if (i > 0) Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text('+',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white.withOpacity(0.6),
+                    shadows: const [Shadow(blurRadius: 6, color: Colors.black54)],
+                  ),
+                ),
+              ),
+              Text(
+                morphemes[i]['part'] as String? ?? '',
+                style: TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                  color: _detailMorphemeColors[morphemes[i]['type']] ?? Colors.white,
+                  shadows: const [Shadow(blurRadius: 8, color: Colors.black54, offset: Offset(0, 1))],
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 4),
+        // 第二行：每个词素的含义
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (int i = 0; i < morphemes.length; i++) ...[
+              if (i > 0) const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  morphemes[i]['meaning'] as String? ?? '',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: _detailMorphemeColors[morphemes[i]['type']] ?? Colors.white70,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ],
     );
   }
@@ -379,16 +473,17 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
       _quizSyllablePhase = 'whole';
     }
 
-    // ★ v5.1: 英→汉 + 有音节数据 → 走音节动画序列（整词→拆分两遍播放）
+    // ★ v5.2: 英→汉 + 有音节数据 → 走动画序列（整词→音节→词根词缀）
     final hasQuizSyllables = question.step == TestStep.enToCn
         && question.syllables.length > 1
         && !question.word.contains(' ')
         && !question.word.startsWith('-')
         && !question.word.endsWith('-');
+    final hasQuizMorphemes = question.morphemes.isNotEmpty;
 
     if (!study.isShowingResult && question.step != TestStep.cnToEn) {
       if (hasQuizSyllables) {
-        _startQuizSyllableSequence(question.wordId);
+        _startQuizSyllableSequence(question.wordId, hasMorphemes: hasQuizMorphemes);
       } else {
         _autoPlay('q_${question.wordId}_${question.step.name}', question.wordId);
       }
@@ -487,13 +582,19 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     final isCnToEn = question.step == TestStep.cnToEn;
     final isSpelling = question.step == TestStep.spelling;
 
-    // ★ v5.1: 仅在phase=split时显示音节拆分（动画序列控制）
-    final showSyllableDot = isEnToCn
-        && _quizSyllablePhase == 'split'
-        && question.syllables.length > 1
+    // ★ v5.2: 根据动画阶段决定显示方式
+    final isSingleWord = isEnToCn
         && !question.word.contains(' ')
         && !question.word.startsWith('-')
         && !question.word.endsWith('-');
+
+    final showSyllableDot = isSingleWord
+        && _quizSyllablePhase == 'split'
+        && question.syllables.length > 1;
+
+    final showMorpheme = isSingleWord
+        && _quizSyllablePhase == 'morpheme'
+        && question.morphemes.isNotEmpty;
 
     return Card(
       child: Container(
@@ -503,7 +604,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
           children: [
             const SizedBox(height: 8),
             if (isEnToCn || isSpelling) ...[
-              // ★ v5.1: 单词 + 喇叭横排（支持音节动画）
+              // ★ v5.2: 单词展示（整词 → 音节拆分 → 词根词缀）
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.center,
@@ -519,18 +620,20 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                           ),
                           textAlign: TextAlign.center,
                         )
-                      : showSyllableDot
-                        ? _buildSyllableDotText(question.syllables, 32)
-                        : Text(
-                            question.word,
-                            style: const TextStyle(
-                              fontSize: 32,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.textPrimary,
-                              letterSpacing: -0.5,
+                      : showMorpheme
+                        ? _buildMorphemeText(question.morphemes, 28)
+                        : showSyllableDot
+                          ? _buildSyllableDotText(question.syllables, 32)
+                          : Text(
+                              question.word,
+                              style: const TextStyle(
+                                fontSize: 32,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.textPrimary,
+                                letterSpacing: -0.5,
+                              ),
+                              textAlign: TextAlign.center,
                             ),
-                            textAlign: TextAlign.center,
-                          ),
                   ),
                   if (isEnToCn) _buildPlayButton(question.wordId),
                 ],
@@ -589,6 +692,83 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
             ),
           ),
         ],
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ★ v5.2: 词根词缀构词法展示
+  // 颜色: 前缀=蓝色  词根=橙色  后缀=绿色
+  // ═══════════════════════════════════════════════════════════════════════
+
+  static const _morphemeColors = {
+    'prefix': Color(0xFF2196F3),  // 蓝色
+    'root':   Color(0xFFE65100),  // 橙色
+    'suffix': Color(0xFF4CAF50),  // 绿色
+  };
+
+  Widget _buildMorphemeText(List<Map<String, dynamic>> morphemes, double fontSize) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 第一行：带颜色的词素拆分  ac + cept + ance
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (int i = 0; i < morphemes.length; i++) ...[
+              if (i > 0) Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Text('+',
+                  style: TextStyle(
+                    fontSize: fontSize * 0.7,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textHint,
+                  ),
+                ),
+              ),
+              Text(
+                morphemes[i]['part'] as String? ?? '',
+                style: TextStyle(
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w800,
+                  color: _morphemeColors[morphemes[i]['type']] ?? AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 6),
+        // 第二行：每个词素的含义
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (int i = 0; i < morphemes.length; i++) ...[
+              if (i > 0) const SizedBox(width: 8),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    morphemes[i]['part'] as String? ?? '',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: _morphemeColors[morphemes[i]['type']] ?? AppColors.textPrimary,
+                    ),
+                  ),
+                  Text(
+                    (morphemes[i]['meaning'] as String? ?? '').isEmpty
+                        ? (morphemes[i]['origin'] as String? ?? '')
+                        : (morphemes[i]['meaning'] as String? ?? ''),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
       ],
     );
   }
@@ -1068,12 +1248,18 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
         && !wordText.startsWith('-')
         && !wordText.endsWith('-');
     if (shouldAnimate && _lastDetailWordId != wordId) {
+      // ★ v5.2: 提取词根词缀数据供动画序列使用
+      final rawMorphemes = word['morphemes'] as List?;
+      _detailMorphemes = rawMorphemes
+          ?.map((m) => Map<String, dynamic>.from(m as Map))
+          .toList() ?? <Map<String, dynamic>>[];
       Future.microtask(() => _startSyllableSequence(wordId, syllables));
     } else if (!shouldAnimate && _lastDetailWordId != wordId) {
       // 短语/词缀等不做动画，正常自动播放一次
       _lastDetailWordId = wordId;
       _syllablePhase = 'idle';
       _syllables = [];
+      _detailMorphemes = [];
       _autoPlay('detail_$wordId', wordId);
     }
 
@@ -1309,18 +1495,49 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                 ),
 
                 // ══════════════════════════════════════════
-                // 下部：预留内容区域（词根词缀、巧记等）
+                // 下部：词根词缀构词法卡片
                 // ══════════════════════════════════════════
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-                  color: AppColors.background,
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // ── 后续在这里添加词根词缀、巧记等内容卡片 ──
-                    ],
-                  ),
+                Builder(
+                  builder: (context) {
+                    final rawMorphemes = word['morphemes'] as List?;
+                    final morphemes = rawMorphemes
+                        ?.map((m) => Map<String, dynamic>.from(m as Map))
+                        .toList() ?? <Map<String, dynamic>>[];
+
+                    if (morphemes.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                      color: AppColors.background,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 标题行
+                          Row(
+                            children: [
+                              Icon(Icons.auto_awesome, size: 16, color: AppColors.primary),
+                              const SizedBox(width: 6),
+                              Text('构词法拆解',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          // 词根词缀展示
+                          Center(
+                            child: _buildMorphemeText(morphemes, 24),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -1345,6 +1562,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                   _activeSyllableIndex = -1;
                   _syllablesExpanded = false;
                   _lastDetailWordId = '';
+                  _detailMorphemes = []; // ★ v5.2
                 });
                 if (study.isComplete) {
                   Navigator.pop(context);

@@ -216,6 +216,18 @@ if exist "%UPDATES_DIR%\security.py" (
     set UPDATED=1
 )
 
+if exist "%UPDATES_DIR%\morpheme_dict.py" (
+    copy /Y "%UPDATES_DIR%\morpheme_dict.py" "%BACKEND_DIR%\app\morpheme_dict.py" >nul
+    echo   [OK] morpheme_dict.py  -^>  backend\app\morpheme_dict.py
+    set UPDATED=1
+)
+
+if exist "%UPDATES_DIR%\fill_morphemes.py" (
+    copy /Y "%UPDATES_DIR%\fill_morphemes.py" "%BACKEND_DIR%\fill_morphemes.py" >nul
+    echo   [OK] fill_morphemes.py  -^>  backend\fill_morphemes.py
+    set UPDATED=1
+)
+
 REM --- Directory structure copy (advanced) ---
 
 if exist "%UPDATES_DIR%\backend" (

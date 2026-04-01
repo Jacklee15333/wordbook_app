@@ -85,6 +85,7 @@ class TestQuestion {
   final String? spellingHint;
   final List<String> scrambledLetters;
   final List<String> syllables; // ★ v5.1: 音节数据用于测试页面展示
+  final List<Map<String, dynamic>> morphemes; // ★ v5.2: 词根词缀数据
 
   const TestQuestion({
     required this.wordId,
@@ -97,6 +98,7 @@ class TestQuestion {
     this.spellingHint,
     this.scrambledLetters = const [],
     this.syllables = const [],
+    this.morphemes = const [],
   });
 }
 
@@ -745,6 +747,10 @@ class StudyNotifier extends StateNotifier<StudyState> {
     // ★ v5.1: 提取音节数据
     final rawSyllables = word['syllables'] as List?;
     final syllables = rawSyllables?.map((s) => s.toString()).toList() ?? <String>[];
+    // ★ v5.2: 提取词根词缀数据
+    final rawMorphemes = word['morphemes'] as List?;
+    final morphemes = rawMorphemes?.map((m) => Map<String, dynamic>.from(m as Map)).toList()
+        ?? <Map<String, dynamic>>[];
 
     // 已在 loadTodayTask 中预过滤，这里直接用 _ensureValidMeaning 兜底
     final validMeaning = _ensureValidMeaning(wordText, meaning);
@@ -752,13 +758,13 @@ class StudyNotifier extends StateNotifier<StudyState> {
     TestQuestion question;
     switch (item.currentStep) {
       case TestStep.enToCn:
-        question = _buildEnToCnQuestion(item.wordId, wordText, validMeaning, phonetic, syllables);
+        question = _buildEnToCnQuestion(item.wordId, wordText, validMeaning, phonetic, syllables, morphemes);
         break;
       case TestStep.cnToEn:
-        question = _buildCnToEnQuestion(item.wordId, wordText, validMeaning, phonetic, syllables);
+        question = _buildCnToEnQuestion(item.wordId, wordText, validMeaning, phonetic, syllables, morphemes);
         break;
       case TestStep.spelling:
-        question = _buildSpellingQuestion(item.wordId, wordText, validMeaning, phonetic, syllables);
+        question = _buildSpellingQuestion(item.wordId, wordText, validMeaning, phonetic, syllables, morphemes);
         break;
     }
 
@@ -914,7 +920,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
   // ─── 英选汉 ───  选项text=中文释义, subText=对应的英文单词
 
   TestQuestion _buildEnToCnQuestion(
-      String wordId, String wordText, String meaning, String? phonetic, List<String> syllables) {
+      String wordId, String wordText, String meaning, String? phonetic, List<String> syllables, List<Map<String, dynamic>> morphemes) {
     meaning = _ensureValidMeaning(wordText, meaning);
     final wordType = _getWordType(wordText);
     _log('🔤 英选汉出题: "$wordText" type=$wordType meaning="$meaning"');
@@ -939,13 +945,14 @@ class StudyNotifier extends StateNotifier<StudyState> {
       options: options,
       correctIndex: correctIdx,
       syllables: syllables,
+      morphemes: morphemes,
     );
   }
 
   // ─── 汉选英 ───  选项text=英文单词, subText=对应的中文释义
 
   TestQuestion _buildCnToEnQuestion(
-      String wordId, String wordText, String meaning, String? phonetic, List<String> syllables) {
+      String wordId, String wordText, String meaning, String? phonetic, List<String> syllables, List<Map<String, dynamic>> morphemes) {
     meaning = _ensureValidMeaning(wordText, meaning);
 
     final options = <ChoiceOption>[
@@ -967,13 +974,14 @@ class StudyNotifier extends StateNotifier<StudyState> {
       options: options,
       correctIndex: correctIdx,
       syllables: syllables,
+      morphemes: morphemes,
     );
   }
 
   // ─── 拼写题（音节块拼接）───
 
   TestQuestion _buildSpellingQuestion(
-      String wordId, String wordText, String meaning, String? phonetic, List<String> syllables) {
+      String wordId, String wordText, String meaning, String? phonetic, List<String> syllables, List<Map<String, dynamic>> morphemes) {
     meaning = _ensureValidMeaning(wordText, meaning);
 
     // ★ v4.0: 短语按空格拆成完整单词，单词按音节拆分
@@ -997,6 +1005,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
       spellingHint: chunks.join('|'), // 用 | 分隔的正确顺序
       scrambledLetters: shuffled,     // 打乱后的块
       syllables: syllables,
+      morphemes: morphemes,
     );
   }
 
