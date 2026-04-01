@@ -27,13 +27,18 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   bool _isPlaying = false;
   String _lastAutoPlayedKey = '';
 
-  // ★ v5.0: 音节拆分动画状态
+  // ★ v5.0: 音节拆分动画状态（详情页用）
   List<String> _syllables = [];
   // idle → firstPlay → pause → animating → done
   String _syllablePhase = 'idle';
   int _activeSyllableIndex = -1;
   bool _syllablesExpanded = false;
   String _lastDetailWordId = '';
+
+  // ★ v5.1: 测试页面音节动画状态
+  // whole → split
+  String _quizSyllablePhase = 'whole';
+  String _lastQuizWordId = '';
 
   @override
   void dispose() {
@@ -72,6 +77,65 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     _lastAutoPlayedKey = key;
     Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) _playWord(wordId);
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ★ v5.1: 测试页面音节动画序列
+  // 流程: 显示整词 + 播放第一遍 → 停顿0.8s → 显示拆分 + 播放第二遍
+  // ═══════════════════════════════════════════════════════════════════════
+
+  void _startQuizSyllableSequence(String wordId) {
+    final key = 'quiz_syl_$wordId';
+    if (key == _lastAutoPlayedKey || wordId.isEmpty) return;
+    _lastAutoPlayedKey = key;
+    _lastQuizWordId = wordId;
+    setState(() => _quizSyllablePhase = 'whole');
+
+    final url = '${ApiConfig.baseUrl}/media/$wordId/audio?accent=us';
+
+    // ── 第一遍：显示整词，播放音频 ──
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      _audioElement?.pause();
+      _audioElement = html.AudioElement(url);
+      setState(() => _isPlaying = true);
+
+      _audioElement!.onEnded.listen((_) {
+        if (!mounted) return;
+        setState(() => _isPlaying = false);
+
+        // ── 停顿0.8s后切换到拆分显示 + 播放第二遍 ──
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (!mounted || _lastQuizWordId != wordId) return;
+          setState(() => _quizSyllablePhase = 'split');
+
+          // 播放第二遍
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (!mounted || _lastQuizWordId != wordId) return;
+            _audioElement?.pause();
+            _audioElement = html.AudioElement(url);
+            setState(() => _isPlaying = true);
+            _audioElement!.onEnded.listen((_) {
+              if (mounted) setState(() => _isPlaying = false);
+            });
+            _audioElement!.onError.listen((_) {
+              if (mounted) setState(() => _isPlaying = false);
+            });
+            _audioElement!.play();
+          });
+        });
+      });
+
+      _audioElement!.onError.listen((_) {
+        if (!mounted) return;
+        setState(() {
+          _isPlaying = false;
+          _quizSyllablePhase = 'split'; // 播放失败也切换到拆分
+        });
+      });
+
+      _audioElement!.play();
     });
   }
 
@@ -310,9 +374,24 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   Widget _buildQuestionView(StudyState study) {
     final question = study.currentQuestion!;
 
-    // ★ v4.6: 汉→英阶段不自动播放（避免暴露答案），其余步骤正常播放
+    // ★ v5.1: 检测题目切换，重置测试页音节状态
+    if (question.wordId != _lastQuizWordId) {
+      _quizSyllablePhase = 'whole';
+    }
+
+    // ★ v5.1: 英→汉 + 有音节数据 → 走音节动画序列（整词→拆分两遍播放）
+    final hasQuizSyllables = question.step == TestStep.enToCn
+        && question.syllables.length > 1
+        && !question.word.contains(' ')
+        && !question.word.startsWith('-')
+        && !question.word.endsWith('-');
+
     if (!study.isShowingResult && question.step != TestStep.cnToEn) {
-      _autoPlay('q_${question.wordId}_${question.step.name}', question.wordId);
+      if (hasQuizSyllables) {
+        _startQuizSyllableSequence(question.wordId);
+      } else {
+        _autoPlay('q_${question.wordId}_${question.step.name}', question.wordId);
+      }
     }
 
     return Column(
@@ -408,8 +487,9 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     final isCnToEn = question.step == TestStep.cnToEn;
     final isSpelling = question.step == TestStep.spelling;
 
-    // ★ v5.1: 判断是否显示音节拆分（英→汉时，单个单词且有音节数据）
+    // ★ v5.1: 仅在phase=split时显示音节拆分（动画序列控制）
     final showSyllableDot = isEnToCn
+        && _quizSyllablePhase == 'split'
         && question.syllables.length > 1
         && !question.word.contains(' ')
         && !question.word.startsWith('-')
@@ -423,7 +503,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
           children: [
             const SizedBox(height: 8),
             if (isEnToCn || isSpelling) ...[
-              // ★ v5.1: 单词 + 喇叭横排（支持音节拆分展示）
+              // ★ v5.1: 单词 + 喇叭横排（支持音节动画）
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.center,
