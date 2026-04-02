@@ -487,7 +487,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
 
       final sessionData = jsonEncode({
         'date': _todayStr(),
-        'sessionVersion': 8,  // ★ v5.3: CMU音标数据更新
+        'sessionVersion': 9,  // ★ v5.5: 词素数据刷新
         'wordbookId': _wordbookId,
         'completedWordCount': state.completedWordCount,
         'queueItems': queueData,
@@ -517,7 +517,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
       }
       // ★ v5.2: 版本校验，旧版session自动失效以加载最新词根词缀数据
       final sessionVersion = data['sessionVersion'] as int? ?? 0;
-      if (sessionVersion < 8) {
+      if (sessionVersion < 9) {
         _log('🗑️ 旧版session(v$sessionVersion)，清除并重新加载最新数据');
         await prefs.remove(_sessionKey(wordbookId));
         return false;
@@ -569,6 +569,47 @@ class StudyNotifier extends StateNotifier<StudyState> {
     } catch (_) {}
   }
 
+  /// ★ v5.5: 恢复进度后，从API刷新单词数据（词素/音标等可能已更新）
+  /// 只替换 newWords / reviewWords 的内容，保持队列进度不变
+  /// 如果API返回的单词集合变了（用户改了学习数量等），则放弃旧进度重新加载
+  Future<bool> _refreshWordDataKeepProgress(String wordbookId) async {
+    try {
+      final data = await _api.getTodayTask(wordbookId);
+      final freshNew = List<Map<String, dynamic>>.from(data['new_words'] ?? []);
+      final freshReview = List<Map<String, dynamic>>.from(data['review_words'] ?? []);
+      _log('🔄 刷新单词数据: new=${freshNew.length}, review=${freshReview.length}');
+
+      // ★ 检查旧队列的wordId是否在新数据中都能找到
+      final freshAllCards = [...freshNew, ...freshReview];
+      final freshIdSet = <String>{};
+      for (final card in freshAllCards) {
+        final word = card['word'] as Map<String, dynamic>;
+        freshIdSet.add(word['id'].toString());
+      }
+
+      final oldQueue = state.queueItems;
+      final matchCount = oldQueue.where((q) => freshIdSet.contains(q.wordId)).length;
+
+      if (oldQueue.isNotEmpty && matchCount == 0) {
+        // 完全对不上，说明单词列表变了（用户改了学习数量/换了词书等）
+        _log('⚠️ 旧队列wordId与新数据完全不匹配($matchCount/${oldQueue.length})，放弃旧进度');
+        await clearSession(wordbookId);
+        return false; // 告诉调用方：需要重新加载
+      }
+
+      state = state.copyWith(
+        newWords: freshNew,
+        reviewWords: freshReview,
+      );
+      // 刷新后保存一次，下次恢复就是最新数据
+      _saveSession();
+      return true; // 刷新成功，队列匹配
+    } catch (e) {
+      _log('⚠️ 刷新单词数据失败(将使用缓存): $e');
+      return true; // 网络失败时继续用缓存
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   // 加载今日任务
   // ═══════════════════════════════════════════════════════════════════════
@@ -581,8 +622,15 @@ class StudyNotifier extends StateNotifier<StudyState> {
     // ★ 先尝试恢复当天进度
     final restored = await _restoreSession(wordbookId);
     if (restored) {
-      _generateNextQuestion();
-      return;
+      // ★ v5.5: 恢复进度后，仍从API刷新单词数据（获取最新词素/音标等）
+      // 如果单词列表变了（学习数量调整等），返回false，走下面的全新加载
+      final matched = await _refreshWordDataKeepProgress(wordbookId);
+      if (matched) {
+        _generateNextQuestion();
+        return;
+      }
+      _log('📥 单词列表已变更，重新加载...');
+      state = const StudyState(isLoading: true);
     }
 
     try {
