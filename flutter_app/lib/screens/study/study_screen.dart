@@ -35,6 +35,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   bool _syllablesExpanded = false;
   String _lastDetailWordId = '';
   List<Map<String, dynamic>> _detailMorphemes = []; // ★ v5.2
+  String _detailBriefMeaning = ''; // ★ v5.3: 详情页词义
 
   // ★ v5.2: 测试页面动画状态
   // whole → split → morpheme
@@ -82,8 +83,8 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // ★ v5.2: 测试页面动画序列
-  // 流程: 整词+播放 → 0.8s → 音节拆分+播放 → 0.8s → 词根词缀展示
+  // ★ v5.3: 测试页面四阶段动画序列
+  // 流程: ①整词+播放 → ②音节拆分+播放 → ③词根词缀+播放 → ④总结展示
   // ═══════════════════════════════════════════════════════════════════════
 
   void _startQuizSyllableSequence(String wordId, {bool hasMorphemes = false}) {
@@ -95,60 +96,54 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
 
     final url = '${ApiConfig.baseUrl}/media/$wordId/audio?accent=us';
 
-    // ── 第一遍：显示整词，播放音频 ──
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (!mounted) return;
+    void playAudio(String nextPhase, VoidCallback? onDone) {
+      if (!mounted || _lastQuizWordId != wordId) return;
       _audioElement?.pause();
       _audioElement = html.AudioElement(url);
       setState(() => _isPlaying = true);
-
       _audioElement!.onEnded.listen((_) {
         if (!mounted) return;
         setState(() => _isPlaying = false);
+        if (onDone != null) onDone();
+      });
+      _audioElement!.onError.listen((_) {
+        if (mounted) {
+          setState(() => _isPlaying = false);
+          if (onDone != null) onDone();
+        }
+      });
+      _audioElement!.play();
+    }
 
-        // ── 停顿0.8s后切换到音节拆分 + 播放第二遍 ──
+    // ── 第一遍：显示整词 ──
+    Future.delayed(const Duration(milliseconds: 300), () {
+      playAudio('whole', () {
+        // ── 第一遍结束 → 0.8s → 切到音节拆分 + 播放第二遍 ──
         Future.delayed(const Duration(milliseconds: 800), () {
           if (!mounted || _lastQuizWordId != wordId) return;
           setState(() => _quizSyllablePhase = 'split');
-
-          // 播放第二遍
           Future.delayed(const Duration(milliseconds: 100), () {
-            if (!mounted || _lastQuizWordId != wordId) return;
-            _audioElement?.pause();
-            _audioElement = html.AudioElement(url);
-            setState(() => _isPlaying = true);
-            _audioElement!.onEnded.listen((_) {
-              if (mounted) setState(() => _isPlaying = false);
-              // ── 第二遍播完后，如果有词根词缀数据，停顿0.8s后展示 ──
+            playAudio('split', () {
+              // ── 第二遍结束 → 0.8s → 切到词根词缀 + 播放第三遍 ──
               if (hasMorphemes) {
                 Future.delayed(const Duration(milliseconds: 800), () {
                   if (!mounted || _lastQuizWordId != wordId) return;
                   setState(() => _quizSyllablePhase = 'morpheme');
+                  Future.delayed(const Duration(milliseconds: 100), () {
+                    playAudio('morpheme', () {
+                      // ── 第三遍结束 → 0.8s → 切到总结展示 ──
+                      Future.delayed(const Duration(milliseconds: 800), () {
+                        if (!mounted || _lastQuizWordId != wordId) return;
+                        setState(() => _quizSyllablePhase = 'summary');
+                      });
+                    });
+                  });
                 });
               }
             });
-            _audioElement!.onError.listen((_) {
-              if (mounted) {
-                setState(() => _isPlaying = false);
-                if (hasMorphemes) {
-                  setState(() => _quizSyllablePhase = 'morpheme');
-                }
-              }
-            });
-            _audioElement!.play();
           });
         });
       });
-
-      _audioElement!.onError.listen((_) {
-        if (!mounted) return;
-        setState(() {
-          _isPlaying = false;
-          _quizSyllablePhase = 'split';
-        });
-      });
-
-      _audioElement!.play();
     });
   }
 
@@ -273,7 +268,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   Widget _buildAnimatedWordText(String wordText, String wordId) {
     // ★ v5.2: 词根词缀阶段 → 显示构词法拆解（详情页白色版本）
     if (_syllablePhase == 'morpheme' && _detailMorphemes.isNotEmpty) {
-      return _buildDetailMorphemeText(_detailMorphemes);
+      return _buildDetailMorphemeText(_detailMorphemes, wordText, _detailBriefMeaning);
     }
 
     final showSplit = (_syllablePhase == 'animating' || _syllablePhase == 'done')
@@ -348,24 +343,24 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     'suffix': Color(0xFFA5D6A7),  // 浅绿
   };
 
-  Widget _buildDetailMorphemeText(List<Map<String, dynamic>> morphemes) {
+  Widget _buildDetailMorphemeText(List<Map<String, dynamic>> morphemes, String wordText, String briefMeaning) {
+    final shortMeaning = _cleanMeaning(briefMeaning);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 第一行：彩色词素拆分
+        // 第一行：able + ity = ability
         Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
           children: [
             for (int i = 0; i < morphemes.length; i++) ...[
-              if (i > 0) Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text('+',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white.withOpacity(0.6),
-                    shadows: const [Shadow(blurRadius: 6, color: Colors.black54)],
-                  ),
+              if (i > 0) Text('  +  ',
+                style: TextStyle(
+                  fontSize: 18,
+                  color: Colors.white.withOpacity(0.5),
+                  shadows: const [Shadow(blurRadius: 6, color: Colors.black54)],
                 ),
               ),
               Text(
@@ -378,35 +373,104 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                 ),
               ),
             ],
+            Text('  =  ',
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.white.withOpacity(0.5),
+                shadows: const [Shadow(blurRadius: 6, color: Colors.black54)],
+              ),
+            ),
+            Text(
+              wordText,
+              style: const TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                shadows: [Shadow(blurRadius: 8, color: Colors.black54, offset: Offset(0, 1))],
+              ),
+            ),
           ],
         ),
-        const SizedBox(height: 4),
-        // 第二行：每个词素的含义
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (int i = 0; i < morphemes.length; i++) ...[
-              if (i > 0) const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.4),
-                  borderRadius: BorderRadius.circular(4),
+        const SizedBox(height: 6),
+        // 第二行：能的 + 性质 = 能力
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.4),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (int i = 0; i < morphemes.length; i++) ...[
+                if (i > 0) Text('  +  ',
+                  style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
                 ),
-                child: Text(
-                  morphemes[i]['meaning'] as String? ?? '',
+                Text(
+                  _getMorphemeMeaning(morphemes[i]),
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: _detailMorphemeColors[morphemes[i]['type']] ?? Colors.white70,
                   ),
                 ),
-              ),
+              ],
+              if (shortMeaning.isNotEmpty) ...[
+                Text('  =  ',
+                  style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
+                ),
+                Text(
+                  shortMeaning,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ],
     );
+  }
+
+  /// 获取词素的展示含义：优先 meaning，其次 origin，最后显示词素本身
+  String _getMorphemeMeaning(Map<String, dynamic> m) {
+    final meaning = (m['meaning'] as String? ?? '').trim();
+    if (meaning.isNotEmpty) return meaning;
+    final origin = (m['origin'] as String? ?? '').trim();
+    if (origin.isNotEmpty) return origin;
+    // 没有中文含义时显示词素英文本身（自由词根通常是可识别的单词）
+    return m['part'] as String? ?? '';
+  }
+
+  /// 从完整释义中提取简短中文含义
+  /// 例: "n. (U/C)车祸，事故；意外的事" → "车祸,事故"
+  String _cleanMeaning(String raw) {
+    if (raw.isEmpty) return '';
+    // 去掉词性标记 (n. / v. / adj. / adv. 等)
+    var s = raw.replaceAll(RegExp(r'^[a-zA-Z]+\.\s*'), '');
+    // 去掉括号标记 (U/C) 等
+    s = s.replaceAll(RegExp(r'\([^)]*\)'), '');
+    // 取第一个分号或句号之前的部分
+    final idx = s.indexOf(RegExp(r'[；;。]'));
+    if (idx > 0) s = s.substring(0, idx);
+    return s.trim();
+  }
+
+  /// 从 definitions 列表中提取第一个中文释义
+  String _extractBriefMeaning(List defs) {
+    for (final def in defs.take(2)) {
+      if (def is! Map) continue;
+      for (final key in ['cn', 'meaning', 'definition_cn']) {
+        final val = (def[key] as String? ?? '').trim();
+        if (val.isNotEmpty && RegExp(r'[\u4e00-\u9fff]').hasMatch(val)) {
+          return val;
+        }
+      }
+    }
+    return '';
   }
 
   /// 构建小型发音按钮（放在单词右侧）
@@ -582,19 +646,14 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     final isCnToEn = question.step == TestStep.cnToEn;
     final isSpelling = question.step == TestStep.spelling;
 
-    // ★ v5.2: 根据动画阶段决定显示方式
+    // ★ v5.3: 四阶段动画判定
     final isSingleWord = isEnToCn
         && !question.word.contains(' ')
         && !question.word.startsWith('-')
         && !question.word.endsWith('-');
-
-    final showSyllableDot = isSingleWord
-        && _quizSyllablePhase == 'split'
-        && question.syllables.length > 1;
-
-    final showMorpheme = isSingleWord
-        && _quizSyllablePhase == 'morpheme'
-        && question.morphemes.isNotEmpty;
+    final hasSyllables = isSingleWord && question.syllables.length > 1;
+    final hasMorphemes = isSingleWord && question.morphemes.isNotEmpty;
+    final phase = _quizSyllablePhase; // whole / split / morpheme / summary
 
     return Card(
       child: Container(
@@ -603,52 +662,8 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
         child: Column(
           children: [
             const SizedBox(height: 8),
-            if (isEnToCn || isSpelling) ...[
-              // ★ v5.2: 单词展示（整词 → 音节拆分 → 词根词缀）
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Flexible(
-                    child: isSpelling
-                      ? Text(
-                          question.meaning,
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textPrimary,
-                          ),
-                          textAlign: TextAlign.center,
-                        )
-                      : showMorpheme
-                        ? _buildMorphemeText(question.morphemes, 28)
-                        : showSyllableDot
-                          ? _buildSyllableDotText(question.syllables, 32)
-                          : Text(
-                              question.word,
-                              style: const TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.textPrimary,
-                                letterSpacing: -0.5,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                  ),
-                  if (isEnToCn) _buildPlayButton(question.wordId),
-                ],
-              ),
-              if (!isSpelling && question.phonetic != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  question.phonetic!,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ] else ...[
+            if (isCnToEn) ...[
+              // 汉→英：显示中文含义
               Text(
                 question.meaning,
                 style: const TextStyle(
@@ -658,10 +673,426 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                 ),
                 textAlign: TextAlign.center,
               ),
+            ] else if (isSpelling) ...[
+              // 拼写题：显示中文含义
+              Text(
+                question.meaning,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ] else if (hasSyllables && phase == 'summary') ...[
+              // ★ 第四阶段：总结展示 — 三行居中带标签
+              _buildQuizSummary(question),
+            ] else ...[
+              // ★ 第一/二/三阶段：渐进式展示
+              // 已完成阶段显示在上方（小字灰色）
+              if (phase == 'split' || phase == 'morpheme') ...[
+                // 整词退到上方
+                _buildPhaseLabel(question.word, '读音'),
+                const SizedBox(height: 6),
+              ],
+              if (phase == 'morpheme' && hasSyllables) ...[
+                // 音节也退到上方
+                _buildPhaseLabel(question.syllables.join(' · '), '音节拆分'),
+                const SizedBox(height: 10),
+              ],
+              // 当前阶段居中大字
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: phase == 'morpheme' && hasMorphemes
+                      ? _buildQuizMorphemeText(question.morphemes)
+                      : phase == 'split' && hasSyllables
+                        ? _buildSyllableDotText(question.syllables, 32)
+                        : Text(
+                            question.word,
+                            style: const TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textPrimary,
+                              letterSpacing: -0.5,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                  ),
+                  if (isEnToCn) _buildPlayButton(question.wordId),
+                ],
+              ),
+              if (!isSpelling && question.phonetic != null && phase == 'whole') ...[
+                const SizedBox(height: 8),
+                Text(
+                  question.phonetic!,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
             ],
           ],
         ),
       ),
+    );
+  }
+
+  /// ★ v5.3: 已完成阶段的小标签（灰色，靠左）
+  Widget _buildPhaseLabel(String text, String label) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          text,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textHint,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: AppColors.divider,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textHint,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// ★ v5.3: 总结展示 — 居中对齐，三个带边框的卡片
+  Widget _buildQuizSummary(TestQuestion question) {
+    // ★ 优先使用后端预计算的 syllable_ipa（CMU dict 权威数据）
+    final syllablePhonetics = question.syllableIpa.isNotEmpty
+        ? question.syllableIpa
+        : _splitPhonetic(question.phonetic ?? '', question.syllables);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // ── ① 单词 + 音标 + 喇叭 ──
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.divider),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                question.word,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              if (question.phonetic != null) ...[
+                const SizedBox(width: 8),
+                Text(
+                  question.phonetic!,
+                  style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
+                ),
+              ],
+              _buildPlayButton(question.wordId, size: 22),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 8),
+
+        // ── ② 音节拆分 + 各音节音标 ──
+        if (question.syllables.length > 1) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+            decoration: BoxDecoration(
+              border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+              borderRadius: BorderRadius.circular(8),
+              color: AppColors.primary.withOpacity(0.03),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // 音节卡片
+                for (int i = 0; i < question.syllables.length; i++) ...[
+                  if (i > 0) Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Text('  ·  ',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textHint),
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        question.syllables[i],
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        syllablePhonetics.length > i ? syllablePhonetics[i] : '',
+                        style: const TextStyle(fontSize: 11, color: AppColors.textHint),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text('音节',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.primary),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+
+        // ── ③ 构词拆分 ──
+        if (question.morphemes.isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              borderRadius: BorderRadius.circular(8),
+              color: Colors.orange.withOpacity(0.03),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildQuizMorphemeText(question.morphemes),
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text('构词',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.deepOrange),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// ★ v5.3: 将完整音标拆分到各个音节
+  /// 核心算法：用音节末尾字母和IPA辅音的对应关系来判断归属
+  /// 例: "accidental" /ˌæksəˈdɛnəl/ → /ˌæk/ + /sə/ + /ˈdɛn/ + /əl/
+  ///   "den" 以 'n' 结尾 → IPA /n/ 匹配 → 归入 "den" 的音标
+  ///   "beau" 以元音结尾 → 辅音 /t/ 不匹配 → 归入下一音节 "ti"
+  List<String> _splitPhonetic(String phonetic, List<String> syllables) {
+    if (phonetic.isEmpty || syllables.isEmpty) return [];
+
+    var raw = phonetic.trim();
+    if (raw.startsWith('/')) raw = raw.substring(1);
+    if (raw.endsWith('/')) raw = raw.substring(0, raw.length - 1);
+    raw = raw.trim();
+    if (raw.isEmpty) return [];
+
+    const ipaVowels = 'æɑɒʌɛəɪɔʊaeiouɜɝɚ';
+    const stressChars = 'ˈˌ';
+    const diphthongSeconds = {'ɪ', 'ʊ', 'ə'};
+
+    final chars = raw.runes.map((r) => String.fromCharCode(r)).toList();
+    final n = chars.length;
+
+    // 1. 找元音核心位置（双元音算一个）
+    final vowelPos = <int>[];
+    int ci = 0;
+    while (ci < n) {
+      if (ipaVowels.contains(chars[ci])) {
+        vowelPos.add(ci);
+        if (ci + 1 < n && ipaVowels.contains(chars[ci + 1]) &&
+            diphthongSeconds.contains(chars[ci + 1])) {
+          ci += 2;
+        } else {
+          ci++;
+        }
+      } else {
+        ci++;
+      }
+    }
+
+    // 元音数不匹配 → 按比例回退
+    if (vowelPos.length != syllables.length) {
+      return _proportionalPhoneticSplit(chars, syllables);
+    }
+
+    // 2. 用字母-音标匹配法确定分割点
+    final splitPoints = <int>[];
+    for (int s = 0; s < vowelPos.length - 1; s++) {
+      int vEnd = vowelPos[s] + 1;
+      if (vEnd < n && ipaVowels.contains(chars[vEnd]) &&
+          diphthongSeconds.contains(chars[vEnd])) {
+        vEnd++;
+      }
+      final gapEnd = vowelPos[s + 1];
+
+      if (vEnd >= gapEnd) {
+        splitPoints.add(vEnd);
+        continue;
+      }
+
+      // 找间隙中第一个重音符号
+      int firstStressIdx = -1;
+      for (int g = vEnd; g < gapEnd; g++) {
+        if (stressChars.contains(chars[g])) {
+          firstStressIdx = g;
+          break;
+        }
+      }
+
+      // 重音符号之前的辅音是"韵尾候选"，之后的归入下一音节
+      final codaCandidateEnd = (firstStressIdx >= 0) ? firstStressIdx : gapEnd;
+
+      // 取当前音节文本末尾的辅音字母序列
+      final endingLetters = _getEndingConsonantLetters(syllables[s]);
+
+      // 逐个匹配：辅音音标 vs 音节末尾字母
+      int matched = 0;
+      for (int g = vEnd; g < codaCandidateEnd && matched < endingLetters.length; g++) {
+        if (_ipaMatchesLetter(chars[g], endingLetters[matched])) {
+          matched++;
+        } else {
+          break; // 不匹配就停
+        }
+      }
+
+      // 分割点 = 匹配到的韵尾之后
+      splitPoints.add(vEnd + matched);
+    }
+
+    // 3. 提取各音节片段
+    final result = <String>[];
+    int start = 0;
+    for (int s = 0; s < syllables.length; s++) {
+      final end = (s < splitPoints.length) ? splitPoints[s] : n;
+      if (start >= n) { result.add(''); continue; }
+      final segment = chars.sublist(start, end.clamp(start, n)).join('');
+      result.add('/$segment/');
+      start = end;
+    }
+    return result;
+  }
+
+  /// 取音节文本末尾的辅音字母（从右往左，遇到元音停止）
+  /// "den" → ['n'],  "ac" → ['c'],  "beau" → [],  "tion" → ['n']
+  List<String> _getEndingConsonantLetters(String syllable) {
+    const vowelLetters = 'aeiou';
+    final result = <String>[];
+    for (int i = syllable.length - 1; i >= 0; i--) {
+      if (vowelLetters.contains(syllable[i].toLowerCase())) break;
+      result.insert(0, syllable[i].toLowerCase());
+    }
+    return result;
+  }
+
+  /// 判断 IPA 音标字符是否对应某个英文字母
+  /// 例: 'n' → /n/ ✓,  'c' → /k/ ✓,  'c' → /s/ ✓,  's' → /ʃ/ ✓
+  bool _ipaMatchesLetter(String ipa, String letter) {
+    const map = <String, List<String>>{
+      'b': ['b'],
+      'c': ['k', 's', 'tʃ'],
+      'd': ['d', 'dʒ'],
+      'f': ['f'],
+      'g': ['ɡ', 'g', 'dʒ'],
+      'h': ['h'],
+      'j': ['dʒ', 'j'],
+      'k': ['k'],
+      'l': ['l'],
+      'm': ['m'],
+      'n': ['n', 'ŋ'],
+      'p': ['p'],
+      'q': ['k'],
+      'r': ['r', 'ɹ'],
+      's': ['s', 'z', 'ʃ', 'ʒ'],
+      't': ['t', 'θ', 'tʃ'],
+      'v': ['v'],
+      'w': ['w'],
+      'x': ['k', 's', 'z', 'ɡ', 'g'],
+      'y': ['j', 'i'],
+      'z': ['z', 'ʒ'],
+    };
+    final possibles = map[letter.toLowerCase()];
+    if (possibles == null) return false;
+    return possibles.contains(ipa);
+  }
+
+  /// 按比例回退分割（元音数不匹配时使用）
+  List<String> _proportionalPhoneticSplit(List<String> chars, List<String> syllables) {
+    final totalText = syllables.join('').length;
+    final totalPhon = chars.length;
+    final result = <String>[];
+    int start = 0;
+    for (int i = 0; i < syllables.length; i++) {
+      int count;
+      if (i == syllables.length - 1) {
+        count = totalPhon - start;
+      } else {
+        count = (totalPhon * syllables[i].length / totalText).round().clamp(1, totalPhon - start);
+      }
+      if (start + count > totalPhon) count = totalPhon - start;
+      if (count <= 0) { result.add(''); continue; }
+      result.add('/${chars.sublist(start, start + count).join('')}/');
+      start += count;
+    }
+    return result;
+  }
+
+  /// ★ v5.3: 测试页词根词缀展示 — 纯拆分，不显示中文含义
+  Widget _buildQuizMorphemeText(List<Map<String, dynamic>> morphemes) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        for (int i = 0; i < morphemes.length; i++) ...[
+          if (i > 0) Text(
+            ' + ',
+            style: TextStyle(fontSize: 16, color: AppColors.textHint),
+          ),
+          Text(
+            morphemes[i]['part'] as String? ?? '',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              color: _morphemeColors[morphemes[i]['type']] ?? AppColors.textPrimary,
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -707,24 +1138,22 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     'suffix': Color(0xFF4CAF50),  // 绿色
   };
 
-  Widget _buildMorphemeText(List<Map<String, dynamic>> morphemes, double fontSize) {
+  Widget _buildMorphemeText(List<Map<String, dynamic>> morphemes, double fontSize, String wordText, String wordMeaning) {
+    // 提取简短词义（去掉词性标记）
+    final shortMeaning = _cleanMeaning(wordMeaning);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 第一行：带颜色的词素拆分  ac + cept + ance
+        // 第一行：able + ity = ability
         Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
           children: [
             for (int i = 0; i < morphemes.length; i++) ...[
-              if (i > 0) Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Text('+',
-                  style: TextStyle(
-                    fontSize: fontSize * 0.7,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textHint,
-                  ),
-                ),
+              if (i > 0) Text('  +  ',
+                style: TextStyle(fontSize: fontSize * 0.6, color: AppColors.textHint),
               ),
               Text(
                 morphemes[i]['part'] as String? ?? '',
@@ -735,36 +1164,48 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                 ),
               ),
             ],
+            Text('  =  ',
+              style: TextStyle(fontSize: fontSize * 0.6, color: AppColors.textHint),
+            ),
+            Text(
+              wordText,
+              style: TextStyle(
+                fontSize: fontSize * 0.85,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 6),
-        // 第二行：每个词素的含义
+        // 第二行：能的 + 性质 = 能力
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             for (int i = 0; i < morphemes.length; i++) ...[
-              if (i > 0) const SizedBox(width: 8),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    morphemes[i]['part'] as String? ?? '',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: _morphemeColors[morphemes[i]['type']] ?? AppColors.textPrimary,
-                    ),
-                  ),
-                  Text(
-                    (morphemes[i]['meaning'] as String? ?? '').isEmpty
-                        ? (morphemes[i]['origin'] as String? ?? '')
-                        : (morphemes[i]['meaning'] as String? ?? ''),
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
+              if (i > 0) Text('  +  ',
+                style: TextStyle(fontSize: 12, color: AppColors.textHint),
+              ),
+              Text(
+                _getMorphemeMeaning(morphemes[i]),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _morphemeColors[morphemes[i]['type']]?.withOpacity(0.8) ?? AppColors.textSecondary,
+                ),
+              ),
+            ],
+            if (shortMeaning.isNotEmpty) ...[
+              Text('  =  ',
+                style: TextStyle(fontSize: 12, color: AppColors.textHint),
+              ),
+              Text(
+                shortMeaning,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
               ),
             ],
           ],
@@ -1253,6 +1694,8 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
       _detailMorphemes = rawMorphemes
           ?.map((m) => Map<String, dynamic>.from(m as Map))
           .toList() ?? <Map<String, dynamic>>[];
+      // ★ v5.3: 提取简短中文释义供词根词缀展示使用
+      _detailBriefMeaning = _extractBriefMeaning(definitions);
       Future.microtask(() => _startSyllableSequence(wordId, syllables));
     } else if (!shouldAnimate && _lastDetailWordId != wordId) {
       // 短语/词缀等不做动画，正常自动播放一次
@@ -1260,6 +1703,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
       _syllablePhase = 'idle';
       _syllables = [];
       _detailMorphemes = [];
+      _detailBriefMeaning = '';
       _autoPlay('detail_$wordId', wordId);
     }
 
@@ -1532,7 +1976,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                           const SizedBox(height: 12),
                           // 词根词缀展示
                           Center(
-                            child: _buildMorphemeText(morphemes, 24),
+                            child: _buildMorphemeText(morphemes, 24, wordText, _extractBriefMeaning(definitions)),
                           ),
                         ],
                       ),

@@ -3,6 +3,7 @@
 v4.7: 新增单词图片接口 /media/{word_id}/image
 v4.8: 修复音标问题 — 新增批量修复接口 /api/v1/admin/fix-phonetics
 v5.0: 音节拆分 — pyphen 自动填充 syllables 字段 + 图片匹配标准化
+v5.2: 词根词缀拆分 — morpheme_dict 引擎自动填充 morphemes 字段
 """
 import os
 import re
@@ -25,6 +26,17 @@ from app.models.word import Wordbook, Word, WordbookWord
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+# ★ 降低 SQLAlchemy 日志噪音（只显示 WARNING 以上）
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+
+# ★ v5.2: 词根词缀引擎
+try:
+    from app.morpheme_dict import get_morphemes
+    logger.info("[MORPHEMES] ✅ morpheme_dict module loaded successfully")
+except ImportError as e:
+    logger.warning(f"[MORPHEMES] ⚠️ morpheme_dict module not found: {e}")
+    get_morphemes = None
 
 settings = get_settings()
 
@@ -978,8 +990,149 @@ async def fill_syllables_endpoint(
     return {"message": "syllables fill started in background"}
 
 
+# ═══════════════════════════════════════════════════════════════
+# ★ v5.2: 词根词缀拆分 — morpheme_dict 引擎自动填充
+# ═══════════════════════════════════════════════════════════════
+
+async def _ensure_morphemes_column():
+    """启动时自动添加 morphemes 列（如果不存在）"""
+    try:
+        async with engine.begin() as conn:
+            result = await conn.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='words' AND column_name='morphemes'"
+            ))
+            if result.first() is None:
+                await conn.execute(text(
+                    "ALTER TABLE words ADD COLUMN morphemes JSONB"
+                ))
+                logger.info("[MIGRATE] ✅ Added morphemes column to words table")
+            else:
+                logger.info("[MIGRATE] morphemes column already exists")
+    except Exception as e:
+        logger.warning(f"[MIGRATE] morphemes column check/add failed: {e}")
+
+
+async def _fill_missing_morphemes():
+    """后台填充所有缺少词根词缀数据的单词"""
+    if get_morphemes is None:
+        logger.warning("[MORPHEMES] ⚠️ get_morphemes function not available, skipping fill")
+        return
+
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(Word.id, Word.word).where(Word.morphemes.is_(None))
+            )
+            words = result.all()
+            if not words:
+                logger.info("[MORPHEMES] All words already have morphemes data")
+                return
+
+            count = 0
+            for word_id, word_text in words:
+                morphemes = get_morphemes(word_text)
+                if morphemes:
+                    await session.execute(
+                        update(Word).where(Word.id == word_id)
+                        .values(morphemes=morphemes)
+                    )
+                    count += 1
+
+            await session.commit()
+            logger.info(f"[MORPHEMES] ✅ Filled {count}/{len(words)} words with morpheme data")
+    except Exception as e:
+        logger.error(f"[MORPHEMES] fill error: {e}")
+
+
+@app.post("/api/v1/admin/fill-morphemes")
+async def fill_morphemes_endpoint(
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+):
+    """手动触发词根词缀数据填充（管理员接口）"""
+    background_tasks.add_task(_fill_missing_morphemes)
+    return {"message": "morphemes fill started in background"}
+
+
+@app.post("/api/v1/admin/refill-morphemes")
+async def refill_morphemes_endpoint(
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+):
+    """清空后重填词根词缀数据（用于更新 morpheme_dict 后刷新）"""
+    try:
+        async with async_session() as session:
+            await session.execute(
+                update(Word).values(morphemes=None)
+            )
+            await session.commit()
+            logger.info("[MORPHEMES] 🗑️ Cleared all morphemes data for refill")
+    except Exception as e:
+        logger.error(f"[MORPHEMES] clear error: {e}")
+        return {"message": f"clear failed: {e}"}
+
+    background_tasks.add_task(_fill_missing_morphemes)
+    return {"message": "morphemes cleared and refill started in background"}
+
+
+@app.get("/api/v1/debug/morpheme-status")
+async def morpheme_status():
+    """诊断端点：检查 morphemes 数据状态（无需登录）"""
+    try:
+        async with async_session() as session:
+            # 总词数
+            total_result = await session.execute(select(func.count(Word.id)))
+            total = total_result.scalar()
+
+            # 有 morphemes 数据的词数
+            filled_result = await session.execute(
+                select(func.count(Word.id)).where(Word.morphemes.isnot(None))
+            )
+            filled = filled_result.scalar()
+
+            # 抽样：取5个有数据的词看看
+            sample_result = await session.execute(
+                select(Word.word, Word.morphemes)
+                .where(Word.morphemes.isnot(None))
+                .limit(5)
+            )
+            samples = [{"word": r[0], "morphemes": r[1]} for r in sample_result.all()]
+
+            # 检查 accidental 这个词
+            test_result = await session.execute(
+                select(Word.word, Word.morphemes, Word.syllables)
+                .where(Word.word == 'accidental')
+            )
+            test_row = test_result.first()
+            test_word = None
+            if test_row:
+                test_word = {
+                    "word": test_row[0],
+                    "morphemes": test_row[1],
+                    "syllables": test_row[2],
+                }
+
+        return {
+            "total_words": total,
+            "words_with_morphemes": filled,
+            "words_without_morphemes": total - filled,
+            "morpheme_dict_loaded": get_morphemes is not None,
+            "test_accidental": test_word,
+            "samples": samples,
+        }
+    except Exception as e:
+        return {"error": str(e), "morpheme_dict_loaded": get_morphemes is not None}
+
+
 @app.on_event("startup")
 async def startup_event():
+    # ★★★ 超醒目启动标记 ★★★
+    print("\n" + "★" * 60)
+    print("★★★  main.py v5.2 (2026-04-01) 词根词缀版  ★★★")
+    print("★★★  morpheme_dict loaded:", "YES ✅" if get_morphemes else "NO ❌", " ★★★")
+    print("★" * 60 + "\n")
+
     # ★ 安全自动建表：只创建缺失的表，绝不删除已有数据
     try:
         await safe_auto_migrate()
@@ -992,13 +1145,37 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"syllables 列迁移失败: {e}")
 
+    # ★ v5.2: 确保 morphemes 列存在，并后台填充
+    try:
+        await _ensure_morphemes_column()
+    except Exception as e:
+        logger.warning(f"morphemes 列迁移失败: {e}")
+
+    # ★ v5.3: 确保 syllable_ipa 列存在
+    try:
+        async with engine.begin() as conn:
+            result = await conn.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='words' AND column_name='syllable_ipa'"
+            ))
+            if result.first() is None:
+                await conn.execute(text(
+                    "ALTER TABLE words ADD COLUMN syllable_ipa JSONB"
+                ))
+                logger.info("[MIGRATE] ✅ Added syllable_ipa column")
+            else:
+                logger.info("[MIGRATE] syllable_ipa column already exists")
+    except Exception as e:
+        logger.warning(f"syllable_ipa 列迁移失败: {e}")
+
     import asyncio
     asyncio.create_task(_fill_missing_syllables())
+    asyncio.create_task(_fill_missing_morphemes())
 
-    logger.info("=" * 50)
-    logger.info("ROUTE LIST v5.0 (syllable animation):")
+    print("\n" + "=" * 50)
+    print("ROUTE LIST v5.2 (syllable + morpheme):")
     for route in app.routes:
         if hasattr(route, 'methods') and hasattr(route, 'path'):
             methods = ','.join(route.methods)
-            logger.info(f"  {methods:8s} {route.path}")
-    logger.info("=" * 50)
+            print(f"  {methods:8s} {route.path}")
+    print("=" * 50 + "\n")

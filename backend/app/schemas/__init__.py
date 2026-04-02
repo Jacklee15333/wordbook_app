@@ -83,6 +83,8 @@ class WordResponse(BaseModel):
     difficulty_level: Optional[str]
     is_reviewed: bool
     syllables: Optional[list[str]] = None  # ★ v5.0: 音节拆分
+    syllable_ipa: Optional[list[str]] = None  # ★ v5.3: 各音节音标
+    morphemes: Optional[list[dict]] = None  # ★ v5.2: 词根词缀
 
     class Config:
         from_attributes = True

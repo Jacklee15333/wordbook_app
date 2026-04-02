@@ -29,6 +29,8 @@ class Word(Base):
     review_status = Column(String(20), default="pending")
     ai_generated = Column(Boolean, default=False)
     syllables = Column(JSONB, default=None)  # ★ v5.0: 音节拆分 ["ac","cep","tance"]
+    syllable_ipa = Column(JSONB, default=None)  # ★ v5.3: 各音节音标 ["/ˌæk/","/sə/","/ˈdɛn/","/təl/"]
+    morphemes = Column(JSONB, default=None)  # ★ v5.2: 词根词缀 [{"part":"ac","type":"prefix","meaning":"向","origin":"ad-"}, ...]
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
