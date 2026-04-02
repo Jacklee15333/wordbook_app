@@ -821,53 +821,58 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
         if (question.syllables.length > 1) ...[
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
             decoration: BoxDecoration(
               border: Border.all(color: AppColors.primary.withOpacity(0.3)),
               borderRadius: BorderRadius.circular(8),
               color: AppColors.primary.withOpacity(0.03),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // 音节卡片
-                for (int i = 0; i < question.syllables.length; i++) ...[
-                  if (i > 0) Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: Text('  ·  ',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textHint),
-                    ),
-                  ),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        question.syllables[i],
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        syllablePhonetics.length > i ? syllablePhonetics[i] : '',
-                        style: const TextStyle(fontSize: 11, color: AppColors.textHint),
-                      ),
-                    ],
-                  ),
-                ],
-                const SizedBox(width: 10),
+                // 左侧标签
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  width: 36,
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text('音节',
+                    textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.primary),
                   ),
                 ),
+                // 右侧内容居中
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      for (int i = 0; i < question.syllables.length; i++) ...[
+                        if (i > 0) Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: Text('  ·  ',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textHint),
+                          ),
+                        ),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              question.syllables[i],
+                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.primary),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              syllablePhonetics.length > i ? syllablePhonetics[i] : '',
+                              style: const TextStyle(fontSize: 11, color: AppColors.textHint),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 36), // 右侧占位，使内容视觉居中
               ],
             ),
           ),
@@ -878,27 +883,37 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
         if (question.morphemes.isNotEmpty) ...[
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
             decoration: BoxDecoration(
               border: Border.all(color: Colors.orange.withOpacity(0.3)),
               borderRadius: BorderRadius.circular(8),
               color: Colors.orange.withOpacity(0.03),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildQuizMorphemeText(question.morphemes),
-                const SizedBox(width: 10),
+                // 左侧标签（与音节标签宽度一致）
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  width: 36,
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.orange.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: const Text('构词',
+                    textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.deepOrange),
                   ),
                 ),
+                // 右侧内容居中
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildQuizMorphemeText(question.morphemes),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 36),
               ],
             ),
           ),
