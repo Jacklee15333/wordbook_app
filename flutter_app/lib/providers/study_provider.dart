@@ -1073,6 +1073,8 @@ class StudyNotifier extends StateNotifier<StudyState> {
   /// 尝试基于元音/辅音模式的音节拆分
   List<String> _trySyllableSplit(String word) {
     const vowels = 'aeiouy';
+    // 可做韵尾的辅音（类似拼音的 n/ng），后面跟辅音时留在当前音节
+    const codableConsonants = 'nlmr';
     final result = <String>[];
     var current = '';
     bool lastWasVowel = false;
@@ -1089,9 +1091,15 @@ class StudyNotifier extends StateNotifier<StudyState> {
         lastWasVowel = true;
       } else if (lastWasVowel && syllableVowelCount > 0) {
         // 在"元音→辅音"转换点考虑切分
-        // 但确保当前块至少2个字符且剩余部分至少2个字符
         if (current.length >= 2 && (word.length - i) >= 2) {
-          // 把当前辅音留给下一个音节
+          // 拼音风格: n/l/m/r 如果后面跟的是辅音，留作韵尾
+          if (codableConsonants.contains(ch) &&
+              i + 1 < word.length && !vowels.contains(word[i + 1])) {
+            // 如 "den" + "tal": n 后面是 t(辅音) → n 留在当前音节
+            lastWasVowel = false;
+            continue;
+          }
+          // 其他辅音 → 归下一个音节做声母
           result.add(current.substring(0, current.length - 1));
           current = ch;
           syllableVowelCount = 0;

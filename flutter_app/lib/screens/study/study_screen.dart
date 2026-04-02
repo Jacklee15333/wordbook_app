@@ -776,10 +776,8 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
 
   /// ★ v5.3: 总结展示 — 居中对齐，三个带边框的卡片
   Widget _buildQuizSummary(TestQuestion question) {
-    // ★ 优先使用后端预计算的 syllable_ipa（CMU dict 权威数据）
-    final syllablePhonetics = question.syllableIpa.isNotEmpty
-        ? question.syllableIpa
-        : _splitPhonetic(question.phonetic ?? '', question.syllables);
+    // ★ v5.4: 始终使用客户端拼音风格拆分（忽略后端预计算的syllable_ipa）
+    final syllablePhonetics = _splitPhonetic(question.phonetic ?? '', question.syllables);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -828,10 +826,11 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
               color: AppColors.primary.withOpacity(0.03),
             ),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // 左侧标签
+                // 标签紧挨内容
                 Container(
-                  width: 36,
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withOpacity(0.1),
@@ -842,10 +841,11 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                     style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.primary),
                   ),
                 ),
-                // 右侧内容居中
-                Expanded(
+                const SizedBox(width: 12),
+                // 音节内容
+                Flexible(
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       for (int i = 0; i < question.syllables.length; i++) ...[
                         if (i > 0) Padding(
@@ -872,7 +872,6 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(width: 36), // 右侧占位，使内容视觉居中
               ],
             ),
           ),
@@ -890,10 +889,11 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
               color: Colors.orange.withOpacity(0.03),
             ),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // 左侧标签（与音节标签宽度一致）
+                // 标签紧挨内容
                 Container(
-                  width: 36,
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.orange.withOpacity(0.1),
@@ -904,16 +904,11 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                     style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.deepOrange),
                   ),
                 ),
-                // 右侧内容居中
-                Expanded(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildQuizMorphemeText(question.morphemes),
-                    ],
-                  ),
+                const SizedBox(width: 12),
+                // 构词内容
+                Flexible(
+                  child: _buildQuizMorphemeText(question.morphemes),
                 ),
-                const SizedBox(width: 36),
               ],
             ),
           ),
@@ -922,11 +917,13 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     );
   }
 
-  /// ★ v5.3: 将完整音标拆分到各个音节
-  /// 核心算法：用音节末尾字母和IPA辅音的对应关系来判断归属
-  /// 例: "accidental" /ˌæksəˈdɛnəl/ → /ˌæk/ + /sə/ + /ˈdɛn/ + /əl/
-  ///   "den" 以 'n' 结尾 → IPA /n/ 匹配 → 归入 "den" 的音标
-  ///   "beau" 以元音结尾 → 辅音 /t/ 不匹配 → 归入下一音节 "ti"
+  /// ★ v5.4: 将完整音标按拼音风格拆分到各个音节
+  /// 核心算法：最大声母原则（Maximal Onset Principle）
+  /// 两个元音之间的辅音串，从右往左尽可能多地归入下一音节做"声母"，
+  /// 剩余辅音留在上一音节做"韵尾"。这与汉语拼音"声母+韵母"逻辑一致。
+  /// 特殊处理：重音符号(ˈˌ)始终归入下一音节；n/l/m/ŋ 后跟其他辅音时留在上一音节。
+  /// 例: "accurately" /ˈækjərətli/ → /ˈæk/ /jər/ /rət/ /li/ ✗(旧)
+  ///     → /ˈæk/ /jə/ /rət/ /li/ ✓(新：r归入rate音节做声母)
   List<String> _splitPhonetic(String phonetic, List<String> syllables) {
     if (phonetic.isEmpty || syllables.isEmpty) return [];
 
@@ -943,17 +940,52 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     final chars = raw.runes.map((r) => String.fromCharCode(r)).toList();
     final n = chars.length;
 
+    // ── 合法英语声母（onset）集合 ──
+    // 单辅音声母：几乎所有辅音都可以做声母
+    const singleOnsets = <String>{
+      'p', 'b', 't', 'd', 'k', 'ɡ', 'g', 'f', 'v', 'θ', 'ð',
+      's', 'z', 'ʃ', 'ʒ', 'h', 'm', 'n', 'l', 'r', 'ɹ', 'w', 'j',
+      'tʃ', 'dʒ', 'ŋ',
+    };
+    // 双辅音声母
+    const doubleOnsets = <String>{
+      'pl', 'pr', 'pɹ', 'bl', 'br', 'bɹ', 'tr', 'tɹ', 'dr', 'dɹ',
+      'kl', 'kr', 'kɹ', 'ɡl', 'ɡr', 'ɡɹ', 'gl', 'gr',
+      'fl', 'fr', 'fɹ', 'θr', 'θɹ', 'ʃr', 'ʃɹ',
+      'sl', 'sm', 'sn', 'sw', 'sp', 'st', 'sk',
+      'sf', 'sv',
+      'tw', 'dw', 'kw', 'ɡw', 'gw', 'hw',
+      'pj', 'bj', 'tj', 'dj', 'kj', 'ɡj', 'gj', 'fj', 'vj',
+      'hj', 'mj', 'nj', 'lj',
+    };
+    // 三辅音声母
+    const tripleOnsets = <String>{
+      'spl', 'spr', 'spɹ', 'str', 'stɹ', 'skr', 'skɹ',
+      'skl', 'skw', 'spj', 'stj', 'skj',
+    };
+
     // 1. 找元音核心位置（双元音算一个）
     final vowelPos = <int>[];
+    // vowelEnd[i] = 第i个元音核心结束位置（不含）
+    final vowelEnd = <int>[];
     int ci = 0;
     while (ci < n) {
       if (ipaVowels.contains(chars[ci])) {
         vowelPos.add(ci);
         if (ci + 1 < n && ipaVowels.contains(chars[ci + 1]) &&
             diphthongSeconds.contains(chars[ci + 1])) {
-          ci += 2;
+          // 双元音：跳过第二个元音字符
+          int end = ci + 2;
+          // 跳过长音符号 ː
+          if (end < n && chars[end] == 'ː') end++;
+          vowelEnd.add(end);
+          ci = end;
         } else {
-          ci++;
+          int end = ci + 1;
+          // 跳过长音符号 ː
+          if (end < n && chars[end] == 'ː') end++;
+          vowelEnd.add(end);
+          ci = end;
         }
       } else {
         ci++;
@@ -965,51 +997,74 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
       return _proportionalPhoneticSplit(chars, syllables);
     }
 
-    // 2. 用字母-音标匹配法确定分割点
+    // 2. 对每对相邻元音之间的辅音串，用最大声母原则确定分割点
     final splitPoints = <int>[];
     for (int s = 0; s < vowelPos.length - 1; s++) {
-      int vEnd = vowelPos[s] + 1;
-      if (vEnd < n && ipaVowels.contains(chars[vEnd]) &&
-          diphthongSeconds.contains(chars[vEnd])) {
-        vEnd++;
-      }
-      final gapEnd = vowelPos[s + 1];
+      final gapStart = vowelEnd[s]; // 上一个元音结束
+      final gapEnd = vowelPos[s + 1]; // 下一个元音开始
 
-      if (vEnd >= gapEnd) {
-        splitPoints.add(vEnd);
+      if (gapStart >= gapEnd) {
+        // 无辅音间隙，直接在元音结束处分割
+        splitPoints.add(gapStart);
         continue;
       }
 
-      // 找间隙中第一个重音符号
-      int firstStressIdx = -1;
-      for (int g = vEnd; g < gapEnd; g++) {
+      // 收集间隙中的辅音（跳过重音符号记录位置）
+      final gapChars = <String>[]; // 纯辅音
+      final gapOrigIdx = <int>[]; // 每个辅音在chars中的原始位置
+      int firstStressIdx = -1; // 间隙中第一个重音符号的原始位置
+
+      for (int g = gapStart; g < gapEnd; g++) {
         if (stressChars.contains(chars[g])) {
-          firstStressIdx = g;
-          break;
-        }
-      }
-
-      // 重音符号之前的辅音是"韵尾候选"，之后的归入下一音节
-      final codaCandidateEnd = (firstStressIdx >= 0) ? firstStressIdx : gapEnd;
-
-      // 取当前音节文本末尾的辅音字母序列
-      final endingLetters = _getEndingConsonantLetters(syllables[s]);
-
-      // 逐个匹配：辅音音标 vs 音节末尾字母
-      int matched = 0;
-      for (int g = vEnd; g < codaCandidateEnd && matched < endingLetters.length; g++) {
-        if (_ipaMatchesLetter(chars[g], endingLetters[matched])) {
-          matched++;
+          if (firstStressIdx < 0) firstStressIdx = g;
         } else {
-          break; // 不匹配就停
+          gapChars.add(chars[g]);
+          gapOrigIdx.add(g);
         }
       }
 
-      // 分割点 = 匹配到的韵尾之后
-      splitPoints.add(vEnd + matched);
+      // 如果有重音符号，从重音符号处分割（重音符号及后面的归下一音节）
+      if (firstStressIdx >= 0) {
+        splitPoints.add(firstStressIdx);
+        continue;
+      }
+
+      // 无重音符号：用最大声母原则
+      // 从右往左尝试：3个辅音、2个辅音、1个辅音 做下一音节的声母
+      final cLen = gapChars.length;
+      int onsetLen = 0; // 归入下一音节的辅音数
+
+      if (cLen >= 3) {
+        final tri = gapChars.sublist(cLen - 3).join('');
+        if (tripleOnsets.contains(tri)) {
+          onsetLen = 3;
+        }
+      }
+      if (onsetLen == 0 && cLen >= 2) {
+        final duo = gapChars.sublist(cLen - 2).join('');
+        if (doubleOnsets.contains(duo)) {
+          onsetLen = 2;
+        }
+      }
+      if (onsetLen == 0 && cLen >= 1) {
+        final single = gapChars[cLen - 1];
+        if (singleOnsets.contains(single)) {
+          onsetLen = 1;
+        }
+      }
+
+      // 保底：至少1个辅音做声母（避免元音开头）
+      if (onsetLen == 0) onsetLen = 1;
+      // 保底：至少保留上一音节的元音（不能把所有辅音都给下一音节）
+      // 但如果上一音节已有元音，可以把所有辅音都给下一音节
+      if (onsetLen > cLen) onsetLen = cLen;
+
+      // 分割点 = 第一个归入下一音节的辅音的原始位置
+      final splitIdx = gapOrigIdx[cLen - onsetLen];
+      splitPoints.add(splitIdx);
     }
 
-    // 3. 提取各音节片段
+    // 3. 提取各音节片段，包装为 /.../ 格式
     final result = <String>[];
     int start = 0;
     for (int s = 0; s < syllables.length; s++) {
@@ -1020,49 +1075,6 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
       start = end;
     }
     return result;
-  }
-
-  /// 取音节文本末尾的辅音字母（从右往左，遇到元音停止）
-  /// "den" → ['n'],  "ac" → ['c'],  "beau" → [],  "tion" → ['n']
-  List<String> _getEndingConsonantLetters(String syllable) {
-    const vowelLetters = 'aeiou';
-    final result = <String>[];
-    for (int i = syllable.length - 1; i >= 0; i--) {
-      if (vowelLetters.contains(syllable[i].toLowerCase())) break;
-      result.insert(0, syllable[i].toLowerCase());
-    }
-    return result;
-  }
-
-  /// 判断 IPA 音标字符是否对应某个英文字母
-  /// 例: 'n' → /n/ ✓,  'c' → /k/ ✓,  'c' → /s/ ✓,  's' → /ʃ/ ✓
-  bool _ipaMatchesLetter(String ipa, String letter) {
-    const map = <String, List<String>>{
-      'b': ['b'],
-      'c': ['k', 's', 'tʃ'],
-      'd': ['d', 'dʒ'],
-      'f': ['f'],
-      'g': ['ɡ', 'g', 'dʒ'],
-      'h': ['h'],
-      'j': ['dʒ', 'j'],
-      'k': ['k'],
-      'l': ['l'],
-      'm': ['m'],
-      'n': ['n', 'ŋ'],
-      'p': ['p'],
-      'q': ['k'],
-      'r': ['r', 'ɹ'],
-      's': ['s', 'z', 'ʃ', 'ʒ'],
-      't': ['t', 'θ', 'tʃ'],
-      'v': ['v'],
-      'w': ['w'],
-      'x': ['k', 's', 'z', 'ɡ', 'g'],
-      'y': ['j', 'i'],
-      'z': ['z', 'ʒ'],
-    };
-    final possibles = map[letter.toLowerCase()];
-    if (possibles == null) return false;
-    return possibles.contains(ipa);
   }
 
   /// 按比例回退分割（元音数不匹配时使用）
