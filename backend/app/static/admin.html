@@ -578,6 +578,10 @@
             <span class="icon">🔊</span>
             <span>媒体资源库</span>
         </div>
+        <div class="nav-item" data-section="word-data">
+            <span class="icon">🧩</span>
+            <span>数据管理</span>
+        </div>
     </nav>
 </div>
 
@@ -1100,6 +1104,114 @@
 </div>
 
 
+    <!-- ========== Word Data Management Section ========== -->
+    <div id="section-word-data" class="section">
+        <div class="page-header">
+            <h2>数据管理</h2>
+            <p>管理单词的音节拆分与构词法数据</p>
+        </div>
+
+        <!-- 统计卡片 -->
+        <div class="stats-grid" id="word-data-stats" style="margin-bottom:20px;">
+            <div class="stat-card"><div class="label">总单词数</div><div class="value" id="wd-stat-total">-</div></div>
+            <div class="stat-card"><div class="label">有音节数据</div><div class="value" id="wd-stat-syl">-</div></div>
+            <div class="stat-card"><div class="label">缺音节数据</div><div class="value" id="wd-stat-nosyl">-</div></div>
+            <div class="stat-card"><div class="label">有词素数据</div><div class="value" id="wd-stat-morph">-</div></div>
+            <div class="stat-card"><div class="label">缺词素数据</div><div class="value" id="wd-stat-nomorph">-</div></div>
+        </div>
+
+        <!-- 搜索/筛选 -->
+        <div class="table-container">
+            <div class="table-toolbar">
+                <h3>单词数据列表</h3>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <input type="text" id="wd-search" placeholder="搜索单词..." style="padding:6px 12px;border:1px solid var(--gray-300);border-radius:6px;font-size:13px;width:180px;" onkeydown="if(event.key==='Enter')loadWordData()">
+                    <select id="wd-filter" onchange="loadWordData()" style="padding:6px 10px;border:1px solid var(--gray-300);border-radius:6px;font-size:13px;">
+                        <option value="all">全部</option>
+                        <option value="no_syllables">缺音节</option>
+                        <option value="no_morphemes">缺词素</option>
+                        <option value="has_syllables">有音节</option>
+                        <option value="has_morphemes">有词素</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="loadWordData()" style="font-size:13px;">搜索</button>
+                </div>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:140px;">单词</th>
+                        <th style="width:100px;">音标</th>
+                        <th>音节拆分</th>
+                        <th>音节音标</th>
+                        <th>构词拆分</th>
+                        <th style="width:100px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="wd-table-body">
+                    <tr><td colspan="6" style="text-align:center;color:var(--gray-500);">点击搜索加载数据</td></tr>
+                </tbody>
+            </table>
+
+            <div id="wd-pagination" style="display:flex;justify-content:center;gap:8px;padding:16px;"></div>
+        </div>
+    </div>
+
+    <!-- Word Data Edit Modal -->
+    <div class="modal-overlay" id="word-data-modal">
+        <div class="modal" style="max-width:700px;">
+            <div class="modal-header">
+                <h3 id="wd-modal-title">编辑单词数据</h3>
+                <button class="close-btn" onclick="closeModal('word-data-modal')">&times;</button>
+            </div>
+            <div class="modal-body" style="max-height:70vh;overflow-y:auto;">
+                <input type="hidden" id="wd-edit-id">
+
+                <div style="margin-bottom:16px;padding:12px;background:var(--gray-50);border-radius:8px;">
+                    <div style="font-size:20px;font-weight:700;" id="wd-edit-word"></div>
+                    <div style="font-size:13px;color:var(--gray-500);" id="wd-edit-phonetic"></div>
+                    <div style="font-size:13px;color:var(--gray-600);margin-top:4px;" id="wd-edit-meaning"></div>
+                </div>
+
+                <!-- 音节拆分 -->
+                <div style="margin-bottom:16px;">
+                    <label style="font-weight:600;font-size:14px;display:block;margin-bottom:6px;">音节拆分 <span style="color:var(--gray-400);font-weight:400;">(JSON数组，如 ["ac","cu","rate"])</span></label>
+                    <input type="text" id="wd-edit-syllables" style="width:100%;padding:8px 12px;border:1px solid var(--gray-300);border-radius:6px;font-family:monospace;font-size:13px;" placeholder='["a","cross"]'>
+                </div>
+
+                <!-- 音节音标 -->
+                <div style="margin-bottom:16px;">
+                    <label style="font-weight:600;font-size:14px;display:block;margin-bottom:6px;">音节音标 <span style="color:var(--gray-400);font-weight:400;">(与音节一一对应)</span></label>
+                    <input type="text" id="wd-edit-syllable-ipa" style="width:100%;padding:8px 12px;border:1px solid var(--gray-300);border-radius:6px;font-family:monospace;font-size:13px;" placeholder='["/ə/","/krɔs/"]'>
+                </div>
+
+                <!-- 构词拆分 -->
+                <div style="margin-bottom:16px;">
+                    <label style="font-weight:600;font-size:14px;display:block;margin-bottom:6px;">构词拆分 <span style="color:var(--gray-400);font-weight:400;">(JSON数组)</span></label>
+                    <textarea id="wd-edit-morphemes" rows="6" style="width:100%;padding:8px 12px;border:1px solid var(--gray-300);border-radius:6px;font-family:monospace;font-size:12px;resize:vertical;" placeholder='[{"part":"a","type":"prefix","origin":"","meaning":"去"},{"part":"cross","type":"root","origin":"","meaning":"穿越"}]'></textarea>
+                </div>
+
+                <!-- 快捷工具 -->
+                <div style="display:flex;gap:8px;margin-bottom:12px;">
+                    <button class="btn btn-outline" onclick="wdRegenerate()" style="font-size:12px;">🔄 自动重新生成</button>
+                    <button class="btn btn-outline" onclick="wdClearSyllables()" style="font-size:12px;">清空音节</button>
+                    <button class="btn btn-outline" onclick="wdClearMorphemes()" style="font-size:12px;">清空词素</button>
+                </div>
+
+                <!-- 预览 -->
+                <div id="wd-preview" style="padding:12px;background:var(--gray-50);border-radius:8px;display:none;">
+                    <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">预览</div>
+                    <div id="wd-preview-content" style="font-size:16px;text-align:center;"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('word-data-modal')">取消</button>
+                <button class="btn btn-success" onclick="wdSave()">保存</button>
+            </div>
+        </div>
+    </div>
+
+
 <script>
 // ==================== Config ====================
 const API_BASE = '/api/v1/admin';
@@ -1126,6 +1238,7 @@ function switchSection(section) {
         case 'vocabulary': loadVocabulary(); break;
         case 'import-logs': loadImportTasks(); break;
         case 'media': loadMediaStatus(); loadImageStatus(); break;
+        case 'word-data': loadWordDataStats(); loadWordData(); break;
     }
 }
 
@@ -2119,6 +2232,153 @@ function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+}
+
+// ==================== Word Data Management ====================
+let wdCurrentPage = 1;
+
+async function loadWordDataStats() {
+    try {
+        const data = await api(`${API_BASE}/word-data-stats`);
+        document.getElementById('wd-stat-total').textContent = data.total_words;
+        document.getElementById('wd-stat-syl').textContent = data.has_syllables;
+        document.getElementById('wd-stat-nosyl').textContent = data.no_syllables;
+        document.getElementById('wd-stat-morph').textContent = data.has_morphemes;
+        document.getElementById('wd-stat-nomorph').textContent = data.no_morphemes;
+    } catch(e) { console.error('loadWordDataStats:', e); }
+}
+
+async function loadWordData(page) {
+    if (page) wdCurrentPage = page;
+    const search = document.getElementById('wd-search').value;
+    const filter = document.getElementById('wd-filter').value;
+    const params = new URLSearchParams({search, filter, page: wdCurrentPage, page_size: 30});
+    try {
+        const data = await api(`${API_BASE}/word-data?${params}`);
+        renderWordDataTable(data);
+        renderWdPagination(data);
+    } catch(e) { console.error('loadWordData:', e); }
+}
+
+function renderWordDataTable(data) {
+    const tbody = document.getElementById('wd-table-body');
+    if (!data.items.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-500);">无结果</td></tr>';
+        return;
+    }
+    tbody.innerHTML = data.items.map(w => {
+        const sylStr = w.syllables ? w.syllables.join(' · ') : '<span style="color:var(--gray-400);">—</span>';
+        const ipaStr = w.syllable_ipa ? w.syllable_ipa.join(' ') : '<span style="color:var(--gray-400);">—</span>';
+        const morphStr = w.morphemes ? w.morphemes.map(m => {
+            const c = m.type === 'root' ? '#d32f2f' : m.type === 'prefix' ? '#1565c0' : '#2e7d32';
+            return `<span style="color:${c};font-weight:600;">${m.part}</span><sub style="color:var(--gray-500);font-size:10px;">${m.meaning||''}</sub>`;
+        }).join(' + ') : '<span style="color:var(--gray-400);">—</span>';
+        return `<tr>
+            <td style="font-weight:600;">${w.word}</td>
+            <td style="font-size:12px;color:var(--gray-500);">${w.phonetic_us||''}</td>
+            <td>${sylStr}</td>
+            <td style="font-size:12px;">${ipaStr}</td>
+            <td>${morphStr}</td>
+            <td><button class="btn btn-primary" style="font-size:11px;padding:4px 10px;" onclick="wdEdit('${w.id}')">编辑</button></td>
+        </tr>`;
+    }).join('');
+}
+
+function renderWdPagination(data) {
+    const el = document.getElementById('wd-pagination');
+    if (data.total_pages <= 1) { el.innerHTML = ''; return; }
+    let html = '';
+    if (data.page > 1) html += `<button class="btn btn-outline" style="font-size:12px;" onclick="loadWordData(${data.page-1})">上一页</button>`;
+    html += `<span style="padding:6px 12px;font-size:13px;">第 ${data.page} / ${data.total_pages} 页 (共${data.total}条)</span>`;
+    if (data.page < data.total_pages) html += `<button class="btn btn-outline" style="font-size:12px;" onclick="loadWordData(${data.page+1})">下一页</button>`;
+    el.innerHTML = html;
+}
+
+async function wdEdit(wordId) {
+    try {
+        const data = await api(`${API_BASE}/word-data/${wordId}`);
+        document.getElementById('wd-edit-id').value = data.id;
+        document.getElementById('wd-edit-word').textContent = data.word;
+        document.getElementById('wd-edit-phonetic').textContent = [data.phonetic_us, data.phonetic_uk].filter(Boolean).join('  ');
+        document.getElementById('wd-edit-meaning').textContent = data.meaning || '';
+        document.getElementById('wd-modal-title').textContent = '编辑: ' + data.word;
+        document.getElementById('wd-edit-syllables').value = data.syllables ? JSON.stringify(data.syllables) : '';
+        document.getElementById('wd-edit-syllable-ipa').value = data.syllable_ipa ? JSON.stringify(data.syllable_ipa) : '';
+        document.getElementById('wd-edit-morphemes').value = data.morphemes ? JSON.stringify(data.morphemes, null, 2) : '';
+        document.getElementById('word-data-modal').classList.add('active');
+        wdUpdatePreview();
+    } catch(e) { alert('加载失败: ' + e.message); }
+}
+
+function wdUpdatePreview() {
+    const previewEl = document.getElementById('wd-preview');
+    const contentEl = document.getElementById('wd-preview-content');
+    try {
+        const sylVal = document.getElementById('wd-edit-syllables').value.trim();
+        const morphVal = document.getElementById('wd-edit-morphemes').value.trim();
+        let html = '';
+        if (sylVal) {
+            const syls = JSON.parse(sylVal);
+            html += '<div style="margin-bottom:8px;"><span style="font-size:11px;color:var(--gray-500);">音节:</span> ' + syls.join(' · ') + '</div>';
+        }
+        if (morphVal) {
+            const morphs = JSON.parse(morphVal);
+            html += '<div><span style="font-size:11px;color:var(--gray-500);">构词:</span> ' + morphs.map(m => {
+                const c = m.type === 'root' ? '#d32f2f' : m.type === 'prefix' ? '#1565c0' : '#2e7d32';
+                return `<span style="color:${c};font-weight:600;">${m.part}</span>(<span style="font-size:12px;">${m.meaning||'?'}</span>)`;
+            }).join(' + ') + '</div>';
+        }
+        if (html) { previewEl.style.display = 'block'; contentEl.innerHTML = html; }
+        else { previewEl.style.display = 'none'; }
+    } catch(e) { previewEl.style.display = 'none'; }
+}
+
+document.getElementById('wd-edit-syllables').addEventListener('input', wdUpdatePreview);
+document.getElementById('wd-edit-morphemes').addEventListener('input', wdUpdatePreview);
+
+async function wdSave() {
+    const wordId = document.getElementById('wd-edit-id').value;
+    const body = {};
+
+    const sylVal = document.getElementById('wd-edit-syllables').value.trim();
+    if (sylVal === '') body.syllables = null;
+    else { try { body.syllables = JSON.parse(sylVal); } catch(e) { alert('音节拆分 JSON 格式错误'); return; } }
+
+    const ipaVal = document.getElementById('wd-edit-syllable-ipa').value.trim();
+    if (ipaVal === '') body.syllable_ipa = null;
+    else { try { body.syllable_ipa = JSON.parse(ipaVal); } catch(e) { alert('音节音标 JSON 格式错误'); return; } }
+
+    const morphVal = document.getElementById('wd-edit-morphemes').value.trim();
+    if (morphVal === '') body.morphemes = null;
+    else { try { body.morphemes = JSON.parse(morphVal); } catch(e) { alert('构词拆分 JSON 格式错误'); return; } }
+
+    try {
+        const result = await api(`${API_BASE}/word-data/${wordId}`, {method:'PUT', body: JSON.stringify(body)});
+        alert('✅ ' + result.message);
+        closeModal('word-data-modal');
+        loadWordData();
+        loadWordDataStats();
+    } catch(e) { alert('保存失败: ' + e.message); }
+}
+
+async function wdRegenerate() {
+    const wordId = document.getElementById('wd-edit-id').value;
+    try {
+        const result = await api(`${API_BASE}/word-data/${wordId}/regenerate`, {method:'POST'});
+        alert(result.message);
+        wdEdit(wordId);
+    } catch(e) { alert('重新生成失败: ' + e.message); }
+}
+
+function wdClearSyllables() {
+    document.getElementById('wd-edit-syllables').value = '';
+    document.getElementById('wd-edit-syllable-ipa').value = '';
+    wdUpdatePreview();
+}
+
+function wdClearMorphemes() {
+    document.getElementById('wd-edit-morphemes').value = '';
+    wdUpdatePreview();
 }
 
 // ==================== Init ====================

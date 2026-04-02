@@ -14,11 +14,12 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.user import User
+from app.models.word import Word
 
 logger = logging.getLogger(__name__)
 
@@ -451,3 +452,211 @@ async def update_import_item(item_id: str, data: dict = Body(...), db: AsyncSess
     item.updated_at = datetime.utcnow()
     await db.commit()
     return {"message": "更新成功"}
+
+
+# ==================== ★ v5.5: 音节/词素 数据管理 ====================
+
+@router.get("/word-data")
+async def list_word_data(
+    search: str = Query("", description="搜索单词"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(30, ge=1, le=100),
+    filter: str = Query("all", description="all|has_syllables|no_syllables|has_morphemes|no_morphemes"),
+    db: AsyncSession = Depends(get_db)
+):
+    """搜索/列表：单词的音节和词素数据"""
+    query = select(
+        Word.id, Word.word, Word.phonetic_us,
+        Word.syllables, Word.syllable_ipa, Word.morphemes
+    )
+    count_query = select(func.count(Word.id))
+
+    if search.strip():
+        query = query.where(Word.word.ilike(f"%{search.strip()}%"))
+        count_query = count_query.where(Word.word.ilike(f"%{search.strip()}%"))
+
+    if filter == "has_syllables":
+        query = query.where(Word.syllables.isnot(None))
+        count_query = count_query.where(Word.syllables.isnot(None))
+    elif filter == "no_syllables":
+        query = query.where(Word.syllables.is_(None))
+        count_query = count_query.where(Word.syllables.is_(None))
+    elif filter == "has_morphemes":
+        query = query.where(Word.morphemes.isnot(None))
+        count_query = count_query.where(Word.morphemes.isnot(None))
+    elif filter == "no_morphemes":
+        query = query.where(Word.morphemes.is_(None))
+        count_query = count_query.where(Word.morphemes.is_(None))
+
+    total = (await db.execute(count_query)).scalar() or 0
+    query = query.order_by(Word.word).offset((page - 1) * page_size).limit(page_size)
+    rows = (await db.execute(query)).all()
+
+    items = []
+    for row in rows:
+        items.append({
+            "id": str(row.id),
+            "word": row.word,
+            "phonetic_us": row.phonetic_us,
+            "syllables": row.syllables,
+            "syllable_ipa": row.syllable_ipa,
+            "morphemes": row.morphemes,
+        })
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+    }
+
+
+@router.get("/word-data/{word_id}")
+async def get_word_data(word_id: str, db: AsyncSession = Depends(get_db)):
+    """获取单个单词的完整数据"""
+    result = await db.execute(
+        select(Word).where(Word.id == word_id)
+    )
+    word = result.scalars().first()
+    if not word:
+        raise HTTPException(status_code=404, detail="单词不存在")
+
+    definitions = word.definitions or []
+    meaning = ""
+    for d in definitions[:2]:
+        pos = (d.get("pos") or "").strip()
+        cn = (d.get("cn") or d.get("meaning") or "").strip()
+        if cn:
+            meaning += f"{pos} {cn}；" if pos else f"{cn}；"
+
+    return {
+        "id": str(word.id),
+        "word": word.word,
+        "phonetic_us": word.phonetic_us,
+        "phonetic_uk": word.phonetic_uk,
+        "meaning": meaning.rstrip("；"),
+        "syllables": word.syllables,
+        "syllable_ipa": word.syllable_ipa,
+        "morphemes": word.morphemes,
+    }
+
+
+@router.put("/word-data/{word_id}")
+async def update_word_data(
+    word_id: str,
+    data: dict = Body(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """更新单词的音节/词素数据"""
+    result = await db.execute(select(Word).where(Word.id == word_id))
+    word = result.scalars().first()
+    if not word:
+        raise HTTPException(status_code=404, detail="单词不存在")
+
+    updated_fields = []
+
+    if "syllables" in data:
+        word.syllables = data["syllables"]  # list[str] or None
+        updated_fields.append("syllables")
+
+    if "syllable_ipa" in data:
+        word.syllable_ipa = data["syllable_ipa"]  # list[str] or None
+        updated_fields.append("syllable_ipa")
+
+    if "morphemes" in data:
+        word.morphemes = data["morphemes"]  # list[dict] or None
+        updated_fields.append("morphemes")
+
+    if not updated_fields:
+        raise HTTPException(status_code=400, detail="没有需要更新的字段")
+
+    word.updated_at = datetime.utcnow()
+    await db.commit()
+    logger.info(f"[WORD-DATA] ✅ Updated {word.word}: {', '.join(updated_fields)}")
+    return {"message": f"已更新: {', '.join(updated_fields)}", "word": word.word}
+
+
+@router.post("/word-data/{word_id}/regenerate")
+async def regenerate_word_data(
+    word_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """重新用引擎生成单词的音节/词素数据"""
+    result = await db.execute(select(Word).where(Word.id == word_id))
+    word = result.scalars().first()
+    if not word:
+        raise HTTPException(status_code=404, detail="单词不存在")
+
+    word_text = word.word.strip()
+    changes = []
+
+    # 重新生成音节
+    try:
+        import pyphen
+        dic = pyphen.Pyphen(lang='en_US')
+        if ' ' not in word_text and word_text.isalpha():
+            parts = dic.inserted(word_text.lower()).split('-')
+            if len(parts) > 1:
+                word.syllables = parts
+                changes.append(f"syllables={parts}")
+    except Exception as e:
+        logger.warning(f"[WORD-DATA] syllable regen failed: {e}")
+
+    # 重新生成音节音标
+    try:
+        from app.main import _get_syllable_ipa
+        if word.syllables and word.phonetic_us:
+            ipa_list = _get_syllable_ipa(word.syllables, word.phonetic_us)
+            if ipa_list:
+                word.syllable_ipa = ipa_list
+                changes.append(f"syllable_ipa={ipa_list}")
+    except Exception as e:
+        logger.warning(f"[WORD-DATA] syllable_ipa regen failed: {e}")
+
+    # 重新生成词素
+    try:
+        from app.morpheme_dict import get_morphemes, MANUAL_MORPHEMES
+        w = word_text.lower()
+        if w in MANUAL_MORPHEMES:
+            word.morphemes = MANUAL_MORPHEMES[w]
+            changes.append("morphemes=MANUAL")
+        else:
+            morphemes = get_morphemes(word_text)
+            if morphemes:
+                word.morphemes = morphemes
+                changes.append(f"morphemes(auto)={len(morphemes)} parts")
+    except Exception as e:
+        logger.warning(f"[WORD-DATA] morpheme regen failed: {e}")
+
+    if changes:
+        word.updated_at = datetime.utcnow()
+        await db.commit()
+        logger.info(f"[WORD-DATA] ✅ Regenerated {word.word}: {', '.join(changes)}")
+        return {"message": f"已重新生成: {', '.join(changes)}", "word": word.word}
+    else:
+        return {"message": "无法自动生成数据，请手动编辑", "word": word.word}
+
+
+@router.get("/word-data-stats")
+async def word_data_stats(db: AsyncSession = Depends(get_db)):
+    """音节/词素数据统计"""
+    total = (await db.execute(select(func.count(Word.id)))).scalar() or 0
+    has_syl = (await db.execute(
+        select(func.count(Word.id)).where(Word.syllables.isnot(None))
+    )).scalar() or 0
+    has_morph = (await db.execute(
+        select(func.count(Word.id)).where(Word.morphemes.isnot(None))
+    )).scalar() or 0
+    has_syl_ipa = (await db.execute(
+        select(func.count(Word.id)).where(Word.syllable_ipa.isnot(None))
+    )).scalar() or 0
+
+    return {
+        "total_words": total,
+        "has_syllables": has_syl,
+        "no_syllables": total - has_syl,
+        "has_morphemes": has_morph,
+        "no_morphemes": total - has_morph,
+        "has_syllable_ipa": has_syl_ipa,
+    }
