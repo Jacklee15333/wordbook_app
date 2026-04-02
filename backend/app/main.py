@@ -32,11 +32,12 @@ logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
 # ★ v5.2: 词根词缀引擎
 try:
-    from app.morpheme_dict import get_morphemes
+    from app.morpheme_dict import get_morphemes, MANUAL_MORPHEMES
     logger.info("[MORPHEMES] ✅ morpheme_dict module loaded successfully")
 except ImportError as e:
     logger.warning(f"[MORPHEMES] ⚠️ morpheme_dict module not found: {e}")
     get_morphemes = None
+    MANUAL_MORPHEMES = {}
 
 settings = get_settings()
 
@@ -1045,6 +1046,32 @@ async def _fill_missing_morphemes():
         logger.error(f"[MORPHEMES] fill error: {e}")
 
 
+async def _apply_manual_morpheme_overrides():
+    """★ v5.5: 用 MANUAL_MORPHEMES 手工标注覆盖低质量的自动解析结果"""
+    if not MANUAL_MORPHEMES:
+        return
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(Word.id, Word.word)
+            )
+            words = result.all()
+            count = 0
+            for word_id, word_text in words:
+                w = word_text.strip().lower()
+                if w in MANUAL_MORPHEMES:
+                    await session.execute(
+                        update(Word).where(Word.id == word_id)
+                        .values(morphemes=MANUAL_MORPHEMES[w])
+                    )
+                    count += 1
+            await session.commit()
+            if count > 0:
+                logger.info(f"[MORPHEMES] ✅ Applied {count} MANUAL_MORPHEMES overrides")
+    except Exception as e:
+        logger.error(f"[MORPHEMES] manual override error: {e}")
+
+
 @app.post("/api/v1/admin/fill-morphemes")
 async def fill_morphemes_endpoint(
     background_tasks: BackgroundTasks,
@@ -1171,6 +1198,7 @@ async def startup_event():
     import asyncio
     asyncio.create_task(_fill_missing_syllables())
     asyncio.create_task(_fill_missing_morphemes())
+    asyncio.create_task(_apply_manual_morpheme_overrides())
 
     print("\n" + "=" * 50)
     print("ROUTE LIST v5.2 (syllable + morpheme):")

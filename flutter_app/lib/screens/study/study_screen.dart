@@ -346,23 +346,23 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   Widget _buildDetailMorphemeText(List<Map<String, dynamic>> morphemes, String wordText, String briefMeaning) {
     final shortMeaning = _cleanMeaning(briefMeaning);
 
-    return Column(
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 第一行：able + ity = ability
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            for (int i = 0; i < morphemes.length; i++) ...[
-              if (i > 0) Text('  +  ',
-                style: TextStyle(
-                  fontSize: 18,
-                  color: Colors.white.withOpacity(0.5),
-                  shadows: const [Shadow(blurRadius: 6, color: Colors.black54)],
-                ),
+        for (int i = 0; i < morphemes.length; i++) ...[
+          if (i > 0) Padding(
+            padding: const EdgeInsets.only(bottom: 20),
+            child: Text('  +  ',
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.white.withOpacity(0.5),
+                shadows: const [Shadow(blurRadius: 6, color: Colors.black54)],
               ),
+            ),
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               Text(
                 morphemes[i]['part'] as String? ?? '',
                 style: TextStyle(
@@ -372,14 +372,33 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                   shadows: const [Shadow(blurRadius: 8, color: Colors.black54, offset: Offset(0, 1))],
                 ),
               ),
-            ],
-            Text('  =  ',
-              style: TextStyle(
-                fontSize: 18,
-                color: Colors.white.withOpacity(0.5),
-                shadows: const [Shadow(blurRadius: 6, color: Colors.black54)],
+              const SizedBox(height: 2),
+              Text(
+                _getMorphemeMeaning(morphemes[i]),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: _detailMorphemeColors[morphemes[i]['type']]?.withOpacity(0.8) ?? Colors.white70,
+                  shadows: const [Shadow(blurRadius: 4, color: Colors.black54)],
+                ),
               ),
+            ],
+          ),
+        ],
+        // = 单词
+        Padding(
+          padding: const EdgeInsets.only(bottom: 20),
+          child: Text('  =  ',
+            style: TextStyle(
+              fontSize: 18,
+              color: Colors.white.withOpacity(0.5),
+              shadows: const [Shadow(blurRadius: 6, color: Colors.black54)],
             ),
+          ),
+        ),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
             Text(
               wordText,
               style: const TextStyle(
@@ -389,47 +408,19 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                 shadows: [Shadow(blurRadius: 8, color: Colors.black54, offset: Offset(0, 1))],
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        // 第二行：能的 + 性质 = 能力
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.4),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (int i = 0; i < morphemes.length; i++) ...[
-                if (i > 0) Text('  +  ',
-                  style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
+            if (shortMeaning.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                shortMeaning,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
                 ),
-                Text(
-                  _getMorphemeMeaning(morphemes[i]),
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: _detailMorphemeColors[morphemes[i]['type']] ?? Colors.white70,
-                  ),
-                ),
-              ],
-              if (shortMeaning.isNotEmpty) ...[
-                Text('  =  ',
-                  style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
-                ),
-                Text(
-                  shortMeaning,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
+              ),
             ],
-          ),
+          ],
         ),
       ],
     );
@@ -826,19 +817,20 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
               color: AppColors.primary.withOpacity(0.03),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
               children: [
-                // 标签紧挨内容
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text('音节',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.primary),
+                // 固定宽度标签（与构词对齐）
+                SizedBox(
+                  width: 36,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text('音节',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.primary),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -889,19 +881,20 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
               color: Colors.orange.withOpacity(0.03),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
               children: [
-                // 标签紧挨内容
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text('构词',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.deepOrange),
+                // 固定宽度标签（与音节对齐）
+                SizedBox(
+                  width: 36,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('构词',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.deepOrange),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1169,19 +1162,19 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     // 提取简短词义（去掉词性标记）
     final shortMeaning = _cleanMeaning(wordMeaning);
 
-    return Column(
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 第一行：able + ity = ability
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            for (int i = 0; i < morphemes.length; i++) ...[
-              if (i > 0) Text('  +  ',
-                style: TextStyle(fontSize: fontSize * 0.6, color: AppColors.textHint),
-              ),
+        for (int i = 0; i < morphemes.length; i++) ...[
+          if (i > 0) Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Text('  +  ',
+              style: TextStyle(fontSize: fontSize * 0.6, color: AppColors.textHint),
+            ),
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               Text(
                 morphemes[i]['part'] as String? ?? '',
                 style: TextStyle(
@@ -1190,10 +1183,28 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                   color: _morphemeColors[morphemes[i]['type']] ?? AppColors.textPrimary,
                 ),
               ),
+              const SizedBox(height: 2),
+              Text(
+                _getMorphemeMeaning(morphemes[i]),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: _morphemeColors[morphemes[i]['type']]?.withOpacity(0.7) ?? AppColors.textSecondary,
+                ),
+              ),
             ],
-            Text('  =  ',
-              style: TextStyle(fontSize: fontSize * 0.6, color: AppColors.textHint),
-            ),
+          ),
+        ],
+        // = 单词
+        Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Text('  =  ',
+            style: TextStyle(fontSize: fontSize * 0.6, color: AppColors.textHint),
+          ),
+        ),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
             Text(
               wordText,
               style: TextStyle(
@@ -1202,34 +1213,12 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                 color: AppColors.textPrimary,
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        // 第二行：能的 + 性质 = 能力
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (int i = 0; i < morphemes.length; i++) ...[
-              if (i > 0) Text('  +  ',
-                style: TextStyle(fontSize: 12, color: AppColors.textHint),
-              ),
-              Text(
-                _getMorphemeMeaning(morphemes[i]),
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _morphemeColors[morphemes[i]['type']]?.withOpacity(0.8) ?? AppColors.textSecondary,
-                ),
-              ),
-            ],
             if (shortMeaning.isNotEmpty) ...[
-              Text('  =  ',
-                style: TextStyle(fontSize: 12, color: AppColors.textHint),
-              ),
+              const SizedBox(height: 2),
               Text(
                 shortMeaning,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 12,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textPrimary,
                 ),

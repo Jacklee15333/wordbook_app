@@ -1088,6 +1088,17 @@ MANUAL_MORPHEMES: dict[str, list[dict]] = {
         {"part": "cur", "type": "root", "meaning": "关心", "origin": "L.cura"},
         {"part": "ate", "type": "suffix", "meaning": "…的", "origin": ""},
     ],
+    "accurately": [
+        {"part": "ac", "type": "prefix", "meaning": "向", "origin": "ad-"},
+        {"part": "cur", "type": "root", "meaning": "关心", "origin": "L.cura"},
+        {"part": "ate", "type": "suffix", "meaning": "…的", "origin": ""},
+        {"part": "ly", "type": "suffix", "meaning": "…地", "origin": ""},
+    ],
+    "accuracy": [
+        {"part": "ac", "type": "prefix", "meaning": "向", "origin": "ad-"},
+        {"part": "cur", "type": "root", "meaning": "关心", "origin": "L.cura"},
+        {"part": "acy", "type": "suffix", "meaning": "性质,状态", "origin": ""},
+    ],
     "achievement": [
         {"part": "achieve", "type": "root", "meaning": "达成", "origin": "OF.achever"},
         {"part": "ment", "type": "suffix", "meaning": "行为,结果", "origin": ""},
