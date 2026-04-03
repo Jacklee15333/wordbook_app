@@ -271,28 +271,6 @@ for /d /r "%BACKEND_DIR%" %%d in (__pycache__) do (
 echo   Done.
 echo.
 
-REM ============================================
-REM  [3.5/7] Clear Flutter build cache if updated
-REM ============================================
-if !UPDATED!==0 goto :skip_cache_clear
-echo [3.5/7] Code updated - clearing Flutter build cache...
-if exist "%FRONTEND_DIR%\build" (
-    rd /s /q "%FRONTEND_DIR%\build" >nul 2>&1
-    echo   Deleted build/ folder (forces fresh compile^)
-)
-if exist "%FRONTEND_DIR%\.dart_tool" (
-    rd /s /q "%FRONTEND_DIR%\.dart_tool" >nul 2>&1
-    echo   Deleted .dart_tool/ (forces pub get^)
-)
-echo   Done.
-echo.
-goto :cache_clear_done
-
-:skip_cache_clear
-echo [3.5/7] No code updates - skipping cache clear.
-echo.
-
-:cache_clear_done
 
 REM ============================================
 REM  [4/7] Find free port
