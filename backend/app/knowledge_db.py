@@ -42,6 +42,7 @@ def _get_conn() -> sqlite3.Connection:
             syllables     TEXT,
             syllable_ipa  TEXT,
             morphemes     TEXT,
+            derivation    TEXT,
             source        TEXT DEFAULT 'manual',
             updated_at    TEXT
         )
@@ -58,7 +59,7 @@ def _get_conn() -> sqlite3.Connection:
 # 写入
 # ═══════════════════════════════════════════════════════════
 
-def save(word: str, syllables=None, syllable_ipa=None, morphemes=None, source="manual"):
+def save(word: str, syllables=None, syllable_ipa=None, morphemes=None, derivation=None, source="manual"):
     """保存/更新一个单词的知识数据"""
     word = word.strip().lower()
     if not word:
@@ -68,12 +69,13 @@ def save(word: str, syllables=None, syllable_ipa=None, morphemes=None, source="m
     try:
         now = datetime.utcnow().isoformat()
         conn.execute("""
-            INSERT INTO word_knowledge (word, syllables, syllable_ipa, morphemes, source, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO word_knowledge (word, syllables, syllable_ipa, morphemes, derivation, source, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(word) DO UPDATE SET
                 syllables    = COALESCE(excluded.syllables, word_knowledge.syllables),
                 syllable_ipa = COALESCE(excluded.syllable_ipa, word_knowledge.syllable_ipa),
                 morphemes    = COALESCE(excluded.morphemes, word_knowledge.morphemes),
+                derivation   = COALESCE(excluded.derivation, word_knowledge.derivation),
                 source       = excluded.source,
                 updated_at   = excluded.updated_at
         """, (
@@ -81,6 +83,7 @@ def save(word: str, syllables=None, syllable_ipa=None, morphemes=None, source="m
             json.dumps(syllables, ensure_ascii=False) if syllables else None,
             json.dumps(syllable_ipa, ensure_ascii=False) if syllable_ipa else None,
             json.dumps(morphemes, ensure_ascii=False) if morphemes else None,
+            derivation,
             source,
             now,
         ))
@@ -106,12 +109,13 @@ def save_batch(items: list[dict]):
             if not word:
                 continue
             conn.execute("""
-                INSERT INTO word_knowledge (word, syllables, syllable_ipa, morphemes, source, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO word_knowledge (word, syllables, syllable_ipa, morphemes, derivation, source, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(word) DO UPDATE SET
                     syllables    = COALESCE(excluded.syllables, word_knowledge.syllables),
                     syllable_ipa = COALESCE(excluded.syllable_ipa, word_knowledge.syllable_ipa),
                     morphemes    = COALESCE(excluded.morphemes, word_knowledge.morphemes),
+                    derivation   = COALESCE(excluded.derivation, word_knowledge.derivation),
                     source       = excluded.source,
                     updated_at   = excluded.updated_at
             """, (
@@ -119,6 +123,7 @@ def save_batch(items: list[dict]):
                 json.dumps(item.get("syllables"), ensure_ascii=False) if item.get("syllables") else None,
                 json.dumps(item.get("syllable_ipa"), ensure_ascii=False) if item.get("syllable_ipa") else None,
                 json.dumps(item.get("morphemes"), ensure_ascii=False) if item.get("morphemes") else None,
+                item.get("derivation"),
                 item.get("source", "manual"),
                 now,
             ))
@@ -175,6 +180,7 @@ def _row_to_dict(row) -> dict:
         "syllables": json.loads(row["syllables"]) if row["syllables"] else None,
         "syllable_ipa": json.loads(row["syllable_ipa"]) if row["syllable_ipa"] else None,
         "morphemes": json.loads(row["morphemes"]) if row["morphemes"] else None,
+        "derivation": row["derivation"] if "derivation" in row.keys() else None,
         "source": row["source"],
         "updated_at": row["updated_at"],
     }
@@ -246,7 +252,7 @@ async def sync_from_main_db():
 
         async with async_session() as session:
             result = await session.execute(
-                select(Word.word, Word.syllables, Word.syllable_ipa, Word.morphemes)
+                select(Word.word, Word.syllables, Word.syllable_ipa, Word.morphemes, Word.derivation)
                 .where(or_(
                     Word.syllables.isnot(None),
                     Word.morphemes.isnot(None),
@@ -255,13 +261,14 @@ async def sync_from_main_db():
             rows = result.all()
 
         items = []
-        for word_text, syllables, syllable_ipa, morphemes in rows:
+        for word_text, syllables, syllable_ipa, morphemes, derivation in rows:
             if syllables or morphemes:
                 items.append({
                     "word": word_text,
                     "syllables": syllables,
                     "syllable_ipa": syllable_ipa,
                     "morphemes": morphemes,
+                    "derivation": derivation,
                     "source": "sync",
                 })
 
@@ -283,10 +290,11 @@ async def apply_to_main_db():
         # 获取主库中缺数据的单词
         async with async_session() as session:
             result = await session.execute(
-                select(Word.id, Word.word, Word.syllables, Word.morphemes)
+                select(Word.id, Word.word, Word.syllables, Word.morphemes, Word.derivation)
                 .where(or_(
                     Word.syllables.is_(None),
                     Word.morphemes.is_(None),
+                    Word.derivation.is_(None),
                 ))
             )
             words = result.all()
@@ -306,7 +314,7 @@ async def apply_to_main_db():
         # 应用到主库
         count = 0
         async with async_session() as session:
-            for word_id, word_text, cur_syl, cur_morph in words:
+            for word_id, word_text, cur_syl, cur_morph, cur_deriv in words:
                 k = knowledge.get(word_text.strip().lower())
                 if not k:
                     continue
@@ -318,6 +326,8 @@ async def apply_to_main_db():
                     updates["morphemes"] = k["morphemes"]
                 if k.get("syllable_ipa") and cur_syl is None:
                     updates["syllable_ipa"] = k["syllable_ipa"]
+                if cur_deriv is None and k.get("derivation"):
+                    updates["derivation"] = k["derivation"]
 
                 if updates:
                     await session.execute(

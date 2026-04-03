@@ -467,7 +467,7 @@ async def list_word_data(
     """搜索/列表：单词的音节和词素数据"""
     query = select(
         Word.id, Word.word, Word.phonetic_us,
-        Word.syllables, Word.syllable_ipa, Word.morphemes
+        Word.syllables, Word.syllable_ipa, Word.morphemes, Word.derivation
     )
     count_query = select(func.count(Word.id))
 
@@ -501,6 +501,7 @@ async def list_word_data(
             "syllables": row.syllables,
             "syllable_ipa": row.syllable_ipa,
             "morphemes": row.morphemes,
+            "derivation": row.derivation,
         })
 
     return {
@@ -539,6 +540,7 @@ async def get_word_data(word_id: str, db: AsyncSession = Depends(get_db)):
         "syllables": word.syllables,
         "syllable_ipa": word.syllable_ipa,
         "morphemes": word.morphemes,
+        "derivation": word.derivation,
     }
 
 
@@ -568,6 +570,10 @@ async def update_word_data(
         word.morphemes = data["morphemes"]  # list[dict] or None
         updated_fields.append("morphemes")
 
+    if "derivation" in data:
+        word.derivation = data["derivation"]  # str or None
+        updated_fields.append("derivation")
+
     if not updated_fields:
         raise HTTPException(status_code=400, detail="没有需要更新的字段")
 
@@ -583,6 +589,7 @@ async def update_word_data(
             syllables=word.syllables,
             syllable_ipa=word.syllable_ipa,
             morphemes=word.morphemes,
+            derivation=word.derivation,
             source="admin-edit",
         )
     except Exception as e:
@@ -734,3 +741,173 @@ async def knowledge_base_apply_to_pg():
         return {"message": f"已应用 {count} 条记录到数据库", "count": count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== ★ v5.8: 批量更新构词推导 ====================
+
+@router.post("/word-data/batch-derivation")
+async def batch_update_derivation(
+    data: dict = Body(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """批量更新构词推导解释（用于AI批量生成后导入）
+    body: {"items": [{"word": "achievement", "derivation": "达成的行为或结果 → 成就"}, ...]}
+    """
+    items = data.get("items", [])
+    if not items:
+        raise HTTPException(status_code=400, detail="没有数据")
+
+    count = 0
+    not_found = []
+    for item in items:
+        word_text = item.get("word", "").strip()
+        derivation = item.get("derivation", "").strip()
+        if not word_text or not derivation:
+            continue
+
+        result = await db.execute(
+            select(Word).where(Word.word.ilike(word_text))
+        )
+        word = result.scalars().first()
+        if word:
+            word.derivation = derivation
+            word.updated_at = datetime.utcnow()
+            count += 1
+
+            # 同步到知识库
+            try:
+                from app.knowledge_db import save as kb_save
+                kb_save(word=word_text, derivation=derivation, source="ai-batch")
+            except Exception:
+                pass
+        else:
+            not_found.append(word_text)
+
+    await db.commit()
+    logger.info(f"[DERIVATION] ✅ Batch updated {count} words")
+    return {
+        "message": f"已更新 {count} 个单词的构词推导",
+        "count": count,
+        "not_found": not_found[:20],  # 最多返回20个未找到的
+    }
+
+
+@router.post("/word-data/auto-generate-derivations")
+async def auto_generate_derivations(db: AsyncSession = Depends(get_db)):
+    """从已有构词数据自动生成推导解释（仅填充derivation为空的单词）"""
+    result = await db.execute(
+        select(Word).where(
+            Word.morphemes.isnot(None),
+            Word.derivation.is_(None),
+        )
+    )
+    words = result.scalars().all()
+    if not words:
+        return {"message": "没有需要生成的单词（所有有构词数据的单词都已有推导）", "count": 0}
+
+    count = 0
+    for word in words:
+        morphemes = word.morphemes or []
+        if len(morphemes) < 2:
+            continue
+
+        defs = word.definitions or []
+        # 提取简短中文释义
+        short_meaning = ""
+        for d in defs[:2]:
+            cn = (d.get("cn") or d.get("meaning") or "").strip()
+            if cn:
+                import re
+                cn = re.sub(r'^[a-zA-Z]+\.\s*', '', cn)
+                cn = re.sub(r'\([^)]*\)', '', cn)
+                idx = cn.find('；')
+                if idx > 0:
+                    cn = cn[:idx]
+                short_meaning = cn.strip()
+                break
+
+        # 构建推导
+        derivation = _build_derivation_text(morphemes, short_meaning)
+        if derivation:
+            word.derivation = derivation
+            word.updated_at = datetime.utcnow()
+            count += 1
+
+            # 同步到知识库
+            try:
+                from app.knowledge_db import save as kb_save
+                kb_save(word=word.word, derivation=derivation, source="auto-gen")
+            except Exception:
+                pass
+
+    await db.commit()
+    logger.info(f"[DERIVATION] ✅ Auto-generated {count}/{len(words)} derivations")
+    return {"message": f"已自动生成 {count} 条推导解释", "count": count, "total_with_morphemes": len(words)}
+
+
+def _build_derivation_text(morphemes: list, short_meaning: str) -> str:
+    """从词素数据生成推导解释文本"""
+    if not morphemes or len(morphemes) < 2:
+        return ""
+
+    prefixes = [m for m in morphemes if m.get('type') == 'prefix']
+    roots = [m for m in morphemes if m.get('type') == 'root']
+    suffixes = [m for m in morphemes if m.get('type') == 'suffix']
+
+    # 构建核心含义
+    core = ""
+    for p in prefixes:
+        m = (p.get('meaning') or '').strip()
+        if m:
+            core += m.split(',')[0].split('，')[0]
+    for r in roots:
+        m = (r.get('meaning') or '').strip()
+        if m:
+            parts = [x.strip() for x in m.replace('，', ',').split(',')]
+            best = parts[0]
+            for part in parts:
+                if len(part) >= 2 and len(part) > len(best):
+                    best = part
+            core += best
+
+    if not core:
+        return ""
+
+    # 用后缀包装
+    result = core
+    for s in suffixes:
+        sm = (s.get('meaning') or '').strip()
+        if not sm:
+            continue
+        if sm in ('的', '…的'):
+            result = f"{result}的"
+        elif sm in ('地', '…地'):
+            result = f"{result}地"
+        elif sm in ('者', '…者'):
+            result = f"{result}的人"
+        elif sm == '化':
+            result = f"使{result}"
+        elif '…' in sm:
+            result = sm.replace('…', result).replace('...', result)
+        elif '行为' in sm and '结果' in sm:
+            result = f"{result}的行为或结果"
+        elif '行为' in sm or '过程' in sm:
+            result = f"{result}的过程"
+        elif '结果' in sm or '产物' in sm:
+            result = f"{result}的结果"
+        elif '性质' in sm or '状态' in sm:
+            result = f"{result}的状态"
+        elif sm.endswith('的') or sm.endswith('地'):
+            result = f"{result}{sm}"
+        else:
+            clean = sm.replace('…', '').replace('...', '')
+            result = f"{result}{clean}"
+
+    # 清理
+    result = result.replace('的的', '的').replace('的地', '地')
+    if result.startswith('的'):
+        result = result[1:]
+
+    if short_meaning and result != short_meaning:
+        return f"{result} → {short_meaning}"
+    return result

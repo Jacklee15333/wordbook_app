@@ -1195,6 +1195,23 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"syllable_ipa 列迁移失败: {e}")
 
+    # ★ v5.8: 确保 derivation 列存在
+    try:
+        async with engine.begin() as conn:
+            result = await conn.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='words' AND column_name='derivation'"
+            ))
+            if result.first() is None:
+                await conn.execute(text(
+                    "ALTER TABLE words ADD COLUMN derivation VARCHAR(500)"
+                ))
+                logger.info("[MIGRATE] ✅ Added derivation column")
+            else:
+                logger.info("[MIGRATE] derivation column already exists")
+    except Exception as e:
+        logger.warning(f"derivation 列迁移失败: {e}")
+
     import asyncio
     asyncio.create_task(_fill_missing_syllables())
     asyncio.create_task(_fill_missing_morphemes())

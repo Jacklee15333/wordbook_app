@@ -87,6 +87,7 @@ class TestQuestion {
   final List<String> syllables; // ★ v5.1: 音节数据用于测试页面展示
   final List<String> syllableIpa; // ★ v5.3: 各音节音标
   final List<Map<String, dynamic>> morphemes; // ★ v5.2: 词根词缀数据
+  final String? derivation; // ★ v5.8: 构词推导解释
 
   const TestQuestion({
     required this.wordId,
@@ -101,6 +102,7 @@ class TestQuestion {
     this.syllables = const [],
     this.syllableIpa = const [],
     this.morphemes = const [],
+    this.derivation,
   });
 }
 
@@ -804,6 +806,8 @@ class StudyNotifier extends StateNotifier<StudyState> {
     final rawMorphemes = word['morphemes'] as List?;
     final morphemes = rawMorphemes?.map((m) => Map<String, dynamic>.from(m as Map)).toList()
         ?? <Map<String, dynamic>>[];
+    // ★ v5.8: 提取构词推导解释
+    final derivation = word['derivation'] as String?;
 
     // 已在 loadTodayTask 中预过滤，这里直接用 _ensureValidMeaning 兜底
     final validMeaning = _ensureValidMeaning(wordText, meaning);
@@ -811,13 +815,13 @@ class StudyNotifier extends StateNotifier<StudyState> {
     TestQuestion question;
     switch (item.currentStep) {
       case TestStep.enToCn:
-        question = _buildEnToCnQuestion(item.wordId, wordText, validMeaning, phonetic, syllables, syllableIpa, morphemes);
+        question = _buildEnToCnQuestion(item.wordId, wordText, validMeaning, phonetic, syllables, syllableIpa, morphemes, derivation);
         break;
       case TestStep.cnToEn:
-        question = _buildCnToEnQuestion(item.wordId, wordText, validMeaning, phonetic, syllables, syllableIpa, morphemes);
+        question = _buildCnToEnQuestion(item.wordId, wordText, validMeaning, phonetic, syllables, syllableIpa, morphemes, derivation);
         break;
       case TestStep.spelling:
-        question = _buildSpellingQuestion(item.wordId, wordText, validMeaning, phonetic, syllables, syllableIpa, morphemes);
+        question = _buildSpellingQuestion(item.wordId, wordText, validMeaning, phonetic, syllables, syllableIpa, morphemes, derivation);
         break;
     }
 
@@ -973,7 +977,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
   // ─── 英选汉 ───  选项text=中文释义, subText=对应的英文单词
 
   TestQuestion _buildEnToCnQuestion(
-      String wordId, String wordText, String meaning, String? phonetic, List<String> syllables, List<String> syllableIpa, List<Map<String, dynamic>> morphemes) {
+      String wordId, String wordText, String meaning, String? phonetic, List<String> syllables, List<String> syllableIpa, List<Map<String, dynamic>> morphemes, String? derivation) {
     meaning = _ensureValidMeaning(wordText, meaning);
     final wordType = _getWordType(wordText);
     _log('🔤 英选汉出题: "$wordText" type=$wordType meaning="$meaning"');
@@ -1000,13 +1004,14 @@ class StudyNotifier extends StateNotifier<StudyState> {
       syllables: syllables,
       syllableIpa: syllableIpa,
       morphemes: morphemes,
+      derivation: derivation,
     );
   }
 
   // ─── 汉选英 ───  选项text=英文单词, subText=对应的中文释义
 
   TestQuestion _buildCnToEnQuestion(
-      String wordId, String wordText, String meaning, String? phonetic, List<String> syllables, List<String> syllableIpa, List<Map<String, dynamic>> morphemes) {
+      String wordId, String wordText, String meaning, String? phonetic, List<String> syllables, List<String> syllableIpa, List<Map<String, dynamic>> morphemes, String? derivation) {
     meaning = _ensureValidMeaning(wordText, meaning);
 
     final options = <ChoiceOption>[
@@ -1030,13 +1035,14 @@ class StudyNotifier extends StateNotifier<StudyState> {
       syllables: syllables,
       syllableIpa: syllableIpa,
       morphemes: morphemes,
+      derivation: derivation,
     );
   }
 
   // ─── 拼写题（音节块拼接）───
 
   TestQuestion _buildSpellingQuestion(
-      String wordId, String wordText, String meaning, String? phonetic, List<String> syllables, List<String> syllableIpa, List<Map<String, dynamic>> morphemes) {
+      String wordId, String wordText, String meaning, String? phonetic, List<String> syllables, List<String> syllableIpa, List<Map<String, dynamic>> morphemes, String? derivation) {
     meaning = _ensureValidMeaning(wordText, meaning);
 
     // ★ v4.0: 短语按空格拆成完整单词，单词按音节拆分
@@ -1062,6 +1068,7 @@ class StudyNotifier extends StateNotifier<StudyState> {
       syllables: syllables,
       syllableIpa: syllableIpa,
       morphemes: morphemes,
+      derivation: derivation,
     );
   }
 

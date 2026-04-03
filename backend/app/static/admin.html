@@ -1049,6 +1049,31 @@
             </div>
         </div>
 
+        <!-- 批量导入构词推导 -->
+        <div style="margin-bottom:20px;background:#fff;border-radius:12px;border:1px solid var(--gray-200);overflow:hidden;">
+            <div style="padding:14px 20px;background:linear-gradient(135deg,#FFF8E1,#FFF3E0);border-bottom:1px solid var(--gray-200);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+                <div>
+                    <div style="font-size:15px;font-weight:700;color:var(--gray-800);">💡 批量导入构词推导</div>
+                    <div style="font-size:12px;color:var(--gray-500);margin-top:3px;">用AI批量生成后，粘贴JSON导入；或从已有构词数据自动生成</div>
+                </div>
+            </div>
+            <div style="padding:16px 20px;">
+                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+                    <button class="btn btn-outline" onclick="wdAutoGenDerivations()" style="font-size:12px;border-radius:8px;border-color:var(--warning);color:var(--warning);">🤖 从构词数据自动生成</button>
+                    <label class="btn btn-outline" style="font-size:12px;border-radius:8px;cursor:pointer;">
+                        📂 导入 JSON 文件
+                        <input type="file" accept=".json" onchange="wdImportDerivationFile(event)" style="display:none;">
+                    </label>
+                    <button class="btn btn-outline" onclick="document.getElementById('wd-batch-area').style.display=document.getElementById('wd-batch-area').style.display==='none'?'block':'none'" style="font-size:12px;border-radius:8px;">📋 粘贴 JSON</button>
+                </div>
+                <div id="wd-batch-area" style="display:none;">
+                    <textarea id="wd-batch-json" rows="5" style="width:100%;padding:10px;border:1.5px solid var(--gray-200);border-radius:8px;font-family:monospace;font-size:12px;resize:vertical;" placeholder='[{"word":"achievement","derivation":"达成的行为或结果 → 成就"},{"word":"activity","derivation":"具有行动性质的状态 → 活动"}]'></textarea>
+                    <button class="btn btn-primary" onclick="wdBatchImportDerivation()" style="font-size:12px;border-radius:8px;margin-top:6px;">确认导入</button>
+                </div>
+                <div id="wd-batch-result" style="margin-top:8px;font-size:12px;display:none;"></div>
+            </div>
+        </div>
+
         <!-- 统计卡片 -->
         <div class="stats-grid" id="word-data-stats" style="margin-bottom:20px;">
             <div class="stat-card"><div class="label">总单词数</div><div class="value" id="wd-stat-total">-</div></div>
@@ -1078,15 +1103,16 @@
             <table>
                 <thead>
                     <tr>
-                        <th style="width:130px;">单词</th>
-                        <th style="width:90px;">音标</th>
-                        <th style="width:150px;">音节拆分</th>
-                        <th>构词拆分</th>
-                        <th style="width:80px;">操作</th>
+                        <th style="width:110px;">单词</th>
+                        <th style="width:80px;">音标</th>
+                        <th style="width:130px;">音节拆分</th>
+                        <th style="width:220px;">构词拆分</th>
+                        <th>构词推导</th>
+                        <th style="width:60px;">操作</th>
                     </tr>
                 </thead>
                 <tbody id="wd-table-body">
-                    <tr><td colspan="5" style="text-align:center;color:var(--gray-400);padding:40px;">点击搜索或切换筛选加载数据</td></tr>
+                    <tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:40px;">点击搜索或切换筛选加载数据</td></tr>
                 </tbody>
             </table>
 
@@ -1296,6 +1322,12 @@
                     <div class="wd-section-title"><span class="icon">🧩</span> 构词拆分</div>
                     <div id="wd-morph-list"></div>
                     <button class="wd-add-btn" onclick="wdAddMorpheme()">＋ 添加词素</button>
+                </div>
+
+                <!-- 构词推导解释 -->
+                <div class="wd-section">
+                    <div class="wd-section-title"><span class="icon">💡</span> 构词推导 <span style="font-weight:400;color:var(--gray-400);font-size:11px;text-transform:none;">解释词素如何组合成单词含义，可用AI批量生成</span></div>
+                    <input type="text" id="wd-edit-derivation" style="width:100%;padding:10px 14px;border:1.5px solid var(--gray-200);border-radius:10px;font-size:14px;outline:none;transition:border-color .2s;background:var(--gray-50);" onfocus="this.style.borderColor='var(--primary)';this.style.background='#fff'" onblur="this.style.borderColor='var(--gray-200)';this.style.background='var(--gray-50)'" placeholder="如：达成的行为或结果 → 成就" oninput="wdUpdatePreview()">
                 </div>
 
                 <div class="wd-section">
@@ -2368,7 +2400,7 @@ async function loadWordData(page) {
 function renderWordDataTable(data) {
     const tbody = document.getElementById('wd-table-body');
     if (!data.items.length) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--gray-400);padding:40px;">无结果</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:40px;">无结果</td></tr>';
         return;
     }
     tbody.innerHTML = data.items.map(w => {
@@ -2383,11 +2415,15 @@ function renderWordDataTable(data) {
                 return `<span style="background:${bg};color:${c};padding:2px 6px;border-radius:4px;font-size:12px;font-weight:600;">${m.part}</span><sub style="color:var(--gray-400);font-size:10px;">${m.meaning||''}</sub>`;
             }).join('<span style="color:var(--gray-300);margin:0 1px;">+</span>')
             : '<span style="color:var(--gray-300);">—</span>';
+        const derivStr = w.derivation
+            ? `<span style="font-size:11px;color:#795548;background:#FFF8E1;padding:2px 8px;border-radius:10px;">💡 ${w.derivation}</span>`
+            : '<span style="color:var(--gray-300);">—</span>';
         return `<tr style="cursor:pointer;" onclick="wdEdit('${w.id}')">
             <td style="font-weight:600;">${w.word}</td>
             <td style="font-size:12px;color:var(--gray-500);">${w.phonetic_us||''}</td>
             <td>${sylStr}</td>
             <td>${morphStr}</td>
+            <td>${derivStr}</td>
             <td><button class="btn btn-primary" style="font-size:11px;padding:4px 12px;border-radius:6px;" onclick="event.stopPropagation();wdEdit('${w.id}')">编辑</button></td>
         </tr>`;
     }).join('');
@@ -2511,6 +2547,12 @@ function wdUpdatePreview() {
     } else {
         morphEl.innerHTML = '<span style="color:var(--gray-300);">无构词数据</span>';
     }
+
+    // 推导解释预览
+    const derivVal = document.getElementById('wd-edit-derivation')?.value?.trim() || '';
+    if (derivVal) {
+        morphEl.innerHTML += `<div style="margin-top:8px;padding:5px 12px;background:#FFF8E1;border-radius:16px;display:inline-block;font-size:13px;color:#795548;font-weight:600;">💡 ${derivVal}</div>`;
+    }
 }
 
 // ── Edit / Save ──
@@ -2532,6 +2574,9 @@ async function wdEdit(wordId) {
 
         wdRenderSylTags();
         wdRenderMorphCards();
+
+        // ★ v5.8: 填充构词推导
+        document.getElementById('wd-edit-derivation').value = data.derivation || '';
 
         // ★ 初始化IPA拆分器
         wdInitIpaPicker(data.phonetic_us || data.phonetic_uk || '');
@@ -2557,6 +2602,7 @@ async function wdSave() {
         morphemes: wdMorphData.length && wdMorphData.some(m => m.part)
             ? wdMorphData.filter(m => m.part)
             : null,
+        derivation: document.getElementById('wd-edit-derivation').value.trim() || null,
     };
 
     try {
@@ -2861,6 +2907,70 @@ async function kbExportJson() {
         URL.revokeObjectURL(url);
         alert(`✅ 已导出 ${r.count} 条记录`);
     } catch(e) { alert('导出失败: ' + e.message); }
+}
+
+// ── Batch Derivation Import ──
+async function wdAutoGenDerivations() {
+    const btn = event.target;
+    btn.disabled = true; btn.textContent = '正在生成...';
+    const resultEl = document.getElementById('wd-batch-result');
+    resultEl.style.display = 'none';
+    try {
+        const r = await api(`${API_BASE}/word-data/auto-generate-derivations`, {method:'POST'});
+        resultEl.style.display = 'block';
+        resultEl.innerHTML = `<span style="color:var(--success);">✅ ${r.message}（共${r.total_with_morphemes}个有构词数据的单词）</span>`;
+        loadWordData();
+        loadWordDataStats();
+    } catch(e) {
+        resultEl.style.display = 'block';
+        resultEl.innerHTML = `<span style="color:var(--danger);">❌ 生成失败：${e.message}</span>`;
+    }
+    btn.disabled = false; btn.textContent = '🤖 从构词数据自动生成';
+}
+
+async function wdImportDerivationFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const resultEl = document.getElementById('wd-batch-result');
+    try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const items = Array.isArray(parsed) ? parsed : (parsed.items || parsed.data || []);
+        if (!items.length) { alert('文件中没有数据'); return; }
+        resultEl.style.display = 'block';
+        resultEl.innerHTML = `<span style="color:var(--gray-500);">正在导入 ${items.length} 条...</span>`;
+        const r = await api(`${API_BASE}/word-data/batch-derivation`, {method:'POST', body: JSON.stringify({items})});
+        resultEl.innerHTML = `<span style="color:var(--success);">✅ ${r.message}</span>` +
+            (r.not_found?.length ? `<br><span style="color:var(--warning);font-size:11px;">未找到: ${r.not_found.join(', ')}</span>` : '');
+        loadWordData();
+    } catch(e) {
+        resultEl.style.display = 'block';
+        resultEl.innerHTML = `<span style="color:var(--danger);">❌ 导入失败：${e.message}</span>`;
+    }
+    event.target.value = '';
+}
+
+async function wdBatchImportDerivation() {
+    const textarea = document.getElementById('wd-batch-json');
+    const resultEl = document.getElementById('wd-batch-result');
+    const text = textarea.value.trim();
+    if (!text) { alert('请粘贴JSON数据'); return; }
+    try {
+        const parsed = JSON.parse(text);
+        const items = Array.isArray(parsed) ? parsed : (parsed.items || parsed.data || []);
+        if (!items.length) { alert('JSON中没有数据'); return; }
+        resultEl.style.display = 'block';
+        resultEl.innerHTML = `<span style="color:var(--gray-500);">正在导入 ${items.length} 条...</span>`;
+        const r = await api(`${API_BASE}/word-data/batch-derivation`, {method:'POST', body: JSON.stringify({items})});
+        resultEl.innerHTML = `<span style="color:var(--success);">✅ ${r.message}</span>` +
+            (r.not_found?.length ? `<br><span style="color:var(--warning);font-size:11px;">未找到: ${r.not_found.join(', ')}</span>` : '');
+        textarea.value = '';
+        document.getElementById('wd-batch-area').style.display = 'none';
+        loadWordData();
+    } catch(e) {
+        resultEl.style.display = 'block';
+        resultEl.innerHTML = `<span style="color:var(--danger);">❌ 导入失败：${e.message}（请检查JSON格式）</span>`;
+    }
 }
 
 // ==================== Init ====================

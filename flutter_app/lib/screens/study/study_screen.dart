@@ -436,6 +436,104 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     return m['part'] as String? ?? '';
   }
 
+  /// ★ v5.8: 构词推导 — 用自然的中文解释词素如何组合成单词含义
+  String _buildDerivation(List<Map<String, dynamic>> morphemes, String wordMeaning) {
+    if (morphemes.length < 2) return '';
+
+    // 收集各部分含义
+    final parts = <Map<String, String>>[];
+    for (final m in morphemes) {
+      final meaning = (m['meaning'] as String? ?? '').trim();
+      final type = (m['type'] as String? ?? 'root');
+      final part = (m['part'] as String? ?? '');
+      if (meaning.isEmpty) continue;
+      parts.add({'meaning': meaning, 'type': type, 'part': part});
+    }
+    if (parts.isEmpty) return '';
+
+    // 分离：前缀 + 词根 + 后缀
+    final prefixes = parts.where((p) => p['type'] == 'prefix').toList();
+    final roots = parts.where((p) => p['type'] == 'root').toList();
+    final suffixes = parts.where((p) => p['type'] == 'suffix').toList();
+
+    // 构建核心含义（前缀 + 词根）
+    String core = '';
+    for (final p in prefixes) {
+      final m = p['meaning']!;
+      // 前缀取第一个含义
+      core += m.split(',').first.split('，').first;
+    }
+    for (final r in roots) {
+      // 词根取最自然的含义（优先选2字以上的中文词）
+      final meanings = r['meaning']!.split(RegExp(r'[,，]'));
+      String best = meanings.first;
+      for (final m in meanings) {
+        final trimmed = m.trim();
+        if (trimmed.length >= 2 && trimmed.length > best.trim().length) {
+          best = trimmed;
+        }
+      }
+      core += best.trim();
+    }
+    if (core.isEmpty) return '';
+
+    // 用后缀模板包装核心含义
+    String result = core;
+    for (final s in suffixes) {
+      result = _applySuffix(result, s['meaning']!);
+    }
+
+    // 清理
+    result = result.replaceAll('的的', '的');
+    result = result.replaceAll('的地', '地');
+    if (result.startsWith('的')) result = result.substring(1);
+
+    // 拼接最终词义
+    final shortMeaning = _cleanMeaning(wordMeaning);
+    if (shortMeaning.isEmpty || result == shortMeaning) return result;
+
+    return '$result → $shortMeaning';
+  }
+
+  /// 根据后缀含义模板，自然地包装核心词义
+  String _applySuffix(String core, String suffixMeaning) {
+    final s = suffixMeaning.trim();
+
+    // 直接助词：的、地、者、化
+    if (s == '的' || s == '…的') return '${core}的';
+    if (s == '地' || s == '…地') return '${core}地';
+    if (s == '者' || s == '…者') return '${core}的人';
+    if (s == '化') return '使$core';
+
+    // 模板型：有…性质的 → 具有[core]性质的
+    if (s.contains('…')) {
+      return s.replaceAll('…', core).replaceAll('...', core);
+    }
+
+    // 名词化后缀（组合判断优先）
+    if (s.contains('行为') && s.contains('结果')) return '${core}的行为或结果';
+    if (s.contains('行为') || s.contains('过程')) return '${core}的过程';
+    if (s.contains('结果') || s.contains('产物')) return '${core}的结果';
+    if (s.contains('性质') && s.contains('状态')) return '${core}的状态';
+    if (s.contains('性质')) return '${core}的特性';
+    if (s.contains('状态')) return '${core}的状态';
+    if (s.contains('名词') || s.contains('事物')) return '${core}的事物';
+    if (s.contains('能') && s.contains('的')) return '能够${core}的';
+    if (s.contains('被') && s.contains('的')) return '可以被${core}的';
+    if (s.contains('学科') || s.contains('学')) return '关于${core}的学科';
+    if (s.contains('倾向') || s.contains('主义')) return '${core}主义';
+
+    // 形容词化
+    if (s.endsWith('的')) return '$core$s';
+
+    // 副词化
+    if (s.endsWith('地')) return '$core$s';
+
+    // 默认：用"的"连接
+    final clean = s.replaceAll('…', '').replaceAll('...', '');
+    return '$core$clean';
+  }
+
   /// 从完整释义中提取简短中文含义
   /// 例: "n. (U/C)车祸，事故；意外的事" → "车祸,事故"
   String _cleanMeaning(String raw) {
@@ -1160,74 +1258,109 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     'suffix': Color(0xFF4CAF50),  // 绿色
   };
 
-  Widget _buildMorphemeText(List<Map<String, dynamic>> morphemes, double fontSize, String wordText, String wordMeaning) {
-    // 提取简短词义（去掉词性标记）
+  Widget _buildMorphemeText(List<Map<String, dynamic>> morphemes, double fontSize, String wordText, String wordMeaning, {String? storedDerivation}) {
     final shortMeaning = _cleanMeaning(wordMeaning);
+    // ★ v5.8: 优先用后端存储的推导解释，无数据时用算法生成
+    final derivation = (storedDerivation != null && storedDerivation.isNotEmpty)
+        ? storedDerivation
+        : _buildDerivation(morphemes, wordMeaning);
 
-    return Row(
+    return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (int i = 0; i < morphemes.length; i++) ...[
-          if (i > 0) Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Text('  +  ',
-              style: TextStyle(fontSize: fontSize * 0.6, color: AppColors.textHint),
-            ),
-          ),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                morphemes[i]['part'] as String? ?? '',
-                style: TextStyle(
-                  fontSize: fontSize,
-                  fontWeight: FontWeight.w800,
-                  color: _morphemeColors[morphemes[i]['type']] ?? AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                _getMorphemeMeaning(morphemes[i]),
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: _morphemeColors[morphemes[i]['type']]?.withOpacity(0.7) ?? AppColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ],
-        // = 单词
-        Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: Text('  =  ',
-            style: TextStyle(fontSize: fontSize * 0.6, color: AppColors.textHint),
-          ),
-        ),
-        Column(
-          mainAxisSize: MainAxisSize.min,
+        // 第一行：词素拆分 achieve + ment = achievement
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.end,
+          spacing: 4,
+          runSpacing: 8,
           children: [
-            Text(
-              wordText,
-              style: TextStyle(
-                fontSize: fontSize * 0.85,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            if (shortMeaning.isNotEmpty) ...[
-              const SizedBox(height: 2),
-              Text(
-                shortMeaning,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+            for (int i = 0; i < morphemes.length; i++) ...[
+              if (i > 0) Padding(
+                padding: const EdgeInsets.only(bottom: 14, left: 2, right: 2),
+                child: Text('+',
+                  style: TextStyle(fontSize: fontSize * 0.55, fontWeight: FontWeight.w400, color: AppColors.textHint),
                 ),
               ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    morphemes[i]['part'] as String? ?? '',
+                    style: TextStyle(
+                      fontSize: fontSize,
+                      fontWeight: FontWeight.w800,
+                      color: _morphemeColors[morphemes[i]['type']] ?? AppColors.textPrimary,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    _getMorphemeMeaning(morphemes[i]),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: (_morphemeColors[morphemes[i]['type']] ?? AppColors.textSecondary).withOpacity(0.65),
+                    ),
+                  ),
+                ],
+              ),
             ],
+            // = 单词 + 词义
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14, left: 4, right: 2),
+              child: Text('=',
+                style: TextStyle(fontSize: fontSize * 0.55, fontWeight: FontWeight.w400, color: AppColors.textHint),
+              ),
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  wordText,
+                  style: TextStyle(
+                    fontSize: fontSize * 0.8,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                if (shortMeaning.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    shortMeaning,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary.withOpacity(0.5),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ],
         ),
+        // 第二行：推导解释
+        if (derivation.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF8E1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '💡 $derivation',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF795548),
+                height: 1.4,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -1994,7 +2127,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                           const SizedBox(height: 12),
                           // 词根词缀展示
                           Center(
-                            child: _buildMorphemeText(morphemes, 24, wordText, _extractBriefMeaning(definitions)),
+                            child: _buildMorphemeText(morphemes, 24, wordText, _extractBriefMeaning(definitions), storedDerivation: word['derivation'] as String?),
                           ),
                         ],
                       ),
