@@ -222,6 +222,12 @@ if exist "%UPDATES_DIR%\morpheme_dict.py" (
     set UPDATED=1
 )
 
+if exist "%UPDATES_DIR%\knowledge_db.py" (
+    copy /Y "%UPDATES_DIR%\knowledge_db.py" "%BACKEND_DIR%\app\knowledge_db.py" >nul
+    echo   [OK] knowledge_db.py  -^>  backend\app\knowledge_db.py
+    set UPDATED=1
+)
+
 if exist "%UPDATES_DIR%\fill_morphemes.py" (
     copy /Y "%UPDATES_DIR%\fill_morphemes.py" "%BACKEND_DIR%\fill_morphemes.py" >nul
     echo   [OK] fill_morphemes.py  -^>  backend\fill_morphemes.py

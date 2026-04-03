@@ -1011,6 +1011,23 @@
             <p>管理单词的音节拆分与构词法数据，编辑后实时生效</p>
         </div>
 
+        <!-- 知识库 -->
+        <div style="margin-bottom:20px;padding:16px 20px;background:#fff;border-radius:12px;border:1px solid var(--gray-200);">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+                <div>
+                    <div style="font-size:15px;font-weight:700;color:var(--gray-800);">📦 知识库 <span style="font-size:11px;font-weight:400;color:var(--gray-400);">word_knowledge.db</span></div>
+                    <div style="font-size:12px;color:var(--gray-500);margin-top:2px;" id="kb-info">独立 SQLite 文件，可复制到其他机器使用</div>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button class="btn btn-primary" onclick="kbSyncFromPg()" style="font-size:12px;border-radius:8px;">⬇ 从主库同步</button>
+                    <button class="btn btn-outline" onclick="kbApplyToPg()" style="font-size:12px;border-radius:8px;">⬆ 应用到主库</button>
+                    <a href="/api/v1/admin/knowledge-base/download" class="btn btn-outline" style="font-size:12px;border-radius:8px;text-decoration:none;display:inline-flex;align-items:center;">💾 下载 .db 文件</a>
+                    <button class="btn btn-outline" onclick="kbExportJson()" style="font-size:12px;border-radius:8px;">📄 导出 JSON</button>
+                </div>
+            </div>
+            <div id="kb-stats" style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--gray-500);"></div>
+        </div>
+
         <!-- 统计卡片 -->
         <div class="stats-grid" id="word-data-stats" style="margin-bottom:20px;">
             <div class="stat-card"><div class="label">总单词数</div><div class="value" id="wd-stat-total">-</div></div>
@@ -1053,6 +1070,49 @@
             </table>
 
             <div id="wd-pagination" style="display:flex;justify-content:center;gap:8px;padding:16px;align-items:center;"></div>
+        </div>
+
+        <!-- 知识库管理 -->
+        <div class="table-container" style="margin-top:20px;">
+            <div class="table-toolbar">
+                <h3>📦 知识库（独立数据库）</h3>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button class="btn btn-primary" onclick="kbSyncFromPg()" style="font-size:12px;border-radius:8px;">⬇ 从主库同步到知识库</button>
+                    <button class="btn btn-outline" onclick="kbApplyToPg()" style="font-size:12px;border-radius:8px;">⬆ 从知识库应用到主库</button>
+                </div>
+            </div>
+            <div style="padding:16px 20px;">
+                <p style="font-size:13px;color:var(--gray-600);margin-bottom:12px;">
+                    知识库是一个独立的 SQLite 文件（<code>backend/data/word_data.db</code>），包含你编辑过的所有音节和构词数据。
+                    可以复制到其他电脑或项目中使用，数据越积累越丰富。
+                </p>
+                <div id="kb-stats" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
+                    <div style="padding:10px 16px;background:var(--gray-50);border-radius:8px;">
+                        <div style="font-size:11px;color:var(--gray-500);">知识库词条</div>
+                        <div style="font-size:20px;font-weight:700;" id="kb-stat-total">-</div>
+                    </div>
+                    <div style="padding:10px 16px;background:var(--gray-50);border-radius:8px;">
+                        <div style="font-size:11px;color:var(--gray-500);">有音节</div>
+                        <div style="font-size:20px;font-weight:700;color:var(--success);" id="kb-stat-syl">-</div>
+                    </div>
+                    <div style="padding:10px 16px;background:var(--gray-50);border-radius:8px;">
+                        <div style="font-size:11px;color:var(--gray-500);">有构词</div>
+                        <div style="font-size:20px;font-weight:700;color:var(--success);" id="kb-stat-morph">-</div>
+                    </div>
+                    <div style="padding:10px 16px;background:var(--gray-50);border-radius:8px;">
+                        <div style="font-size:11px;color:var(--gray-500);">文件大小</div>
+                        <div style="font-size:20px;font-weight:700;" id="kb-stat-size">-</div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button class="btn btn-outline" onclick="kbDownload()" style="font-size:12px;border-radius:8px;">💾 下载知识库文件</button>
+                    <button class="btn btn-outline" onclick="kbExportJson()" style="font-size:12px;border-radius:8px;">📋 导出 JSON</button>
+                    <label class="btn btn-outline" style="font-size:12px;border-radius:8px;cursor:pointer;">
+                        📂 导入 JSON
+                        <input type="file" accept=".json" onchange="kbImportJson(event)" style="display:none;">
+                    </label>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1302,7 +1362,7 @@ function switchSection(section) {
         case 'vocabulary': loadVocabulary(); break;
         case 'import-logs': loadImportTasks(); break;
         case 'media': loadMediaStatus(); loadImageStatus(); break;
-        case 'word-data': loadWordDataStats(); loadWordData(); break;
+        case 'word-data': loadWordDataStats(); loadWordData(); loadKbStats(); break;
     }
 }
 
@@ -2753,6 +2813,113 @@ function wdRestoreIpaGroups(ipaArray) {
     }
     wdRenderIpaPicker();
     wdRenderIpaConfirmed();
+}
+
+// ==================== Knowledge Base ====================
+async function loadKbStats() {
+    try {
+        const data = await api(`${API_BASE}/knowledge-base/stats`);
+        document.getElementById('kb-stat-total').textContent = data.total;
+        document.getElementById('kb-stat-syl').textContent = data.has_syllables;
+        document.getElementById('kb-stat-morph').textContent = data.has_morphemes;
+        document.getElementById('kb-stat-size').textContent = data.db_size_kb + ' KB';
+    } catch(e) { console.error('loadKbStats:', e); }
+}
+
+async function kbSyncFromPg() {
+    if (!confirm('将主数据库中已有的音节/构词数据同步到知识库（不会覆盖知识库中已有的数据）？')) return;
+    try {
+        const r = await api(`${API_BASE}/knowledge-base/sync-from-pg`, {method:'POST'});
+        alert('✅ ' + r.message);
+        loadKbStats();
+    } catch(e) { alert('同步失败: ' + e.message); }
+}
+
+async function kbApplyToPg() {
+    if (!confirm('将知识库中的数据应用到主数据库（只填充主库中缺失的数据）？')) return;
+    try {
+        const r = await api(`${API_BASE}/knowledge-base/apply-to-pg`, {method:'POST'});
+        alert('✅ ' + r.message);
+        loadWordDataStats();
+    } catch(e) { alert('应用失败: ' + e.message); }
+}
+
+function kbDownload() {
+    window.open(`${API_BASE}/knowledge-base/download`, '_blank');
+}
+
+async function kbExportJson() {
+    try {
+        const r = await api(`${API_BASE}/knowledge-base/export`);
+        const blob = new Blob([JSON.stringify(r.data, null, 2)], {type:'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'word_data_export.json'; a.click();
+        URL.revokeObjectURL(url);
+        alert(`✅ 已导出 ${r.count} 条记录`);
+    } catch(e) { alert('导出失败: ' + e.message); }
+}
+
+async function kbImportJson(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+        const text = await file.text();
+        let items;
+        const parsed = JSON.parse(text);
+        items = Array.isArray(parsed) ? parsed : (parsed.data || []);
+        if (!items.length) { alert('文件中没有数据'); return; }
+        if (!confirm(`确认导入 ${items.length} 条记录到知识库？`)) return;
+        const r = await api(`${API_BASE}/knowledge-base/import`, {method:'POST', body: JSON.stringify({data: items})});
+        alert('✅ ' + r.message);
+        loadKbStats();
+    } catch(e) { alert('导入失败: ' + e.message); }
+    event.target.value = '';
+}
+
+// ── Knowledge Base ──
+async function loadKbStats() {
+    try {
+        const data = await api(`${API_BASE}/knowledge-base/stats`);
+        const el = document.getElementById('kb-stats');
+        const sizeMB = (data.file_size_bytes / 1024 / 1024).toFixed(2);
+        el.innerHTML = `
+            <span>📊 共 <b>${data.total}</b> 条</span>
+            <span>音节 <b>${data.has_syllables}</b></span>
+            <span>词素 <b>${data.has_morphemes}</b></span>
+            <span>音标 <b>${data.has_syllable_ipa}</b></span>
+            <span>文件 <b>${sizeMB} MB</b></span>
+        `;
+    } catch(e) { console.error('loadKbStats:', e); }
+}
+
+async function kbSyncFromPg() {
+    if (!confirm('将主数据库中已有的音节/词素数据同步到知识库？')) return;
+    try {
+        const r = await api(`${API_BASE}/knowledge-base/sync-from-pg`, {method:'POST'});
+        alert('✅ ' + r.message);
+        loadKbStats();
+    } catch(e) { alert('同步失败: ' + e.message); }
+}
+
+async function kbApplyToPg() {
+    if (!confirm('将知识库数据应用到主数据库（填充缺失数据）？')) return;
+    try {
+        const r = await api(`${API_BASE}/knowledge-base/apply-to-pg`, {method:'POST'});
+        alert('✅ ' + r.message);
+        loadWordDataStats();
+    } catch(e) { alert('应用失败: ' + e.message); }
+}
+
+async function kbExportJson() {
+    try {
+        const r = await api(`${API_BASE}/knowledge-base/export`);
+        const blob = new Blob([JSON.stringify(r.data, null, 2)], {type:'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'word_knowledge.json'; a.click();
+        URL.revokeObjectURL(url);
+    } catch(e) { alert('导出失败: ' + e.message); }
 }
 
 // ==================== Init ====================
