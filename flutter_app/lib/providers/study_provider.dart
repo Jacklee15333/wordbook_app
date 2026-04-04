@@ -571,6 +571,29 @@ class StudyNotifier extends StateNotifier<StudyState> {
     } catch (_) {}
   }
 
+  /// ★ v5.8: 检查后端数据版本号，变化时清除缓存
+  bool _dataVersionChanged = false;
+  Future<void> _checkDataVersion(String wordbookId) async {
+    _dataVersionChanged = false;
+    try {
+      final resp = await _api.getDataVersion();
+      final serverVersion = resp['version'] as int? ?? 0;
+      final prefs = await SharedPreferences.getInstance();
+      final cachedVersion = prefs.getInt('data_version_$wordbookId') ?? 0;
+
+      if (serverVersion > 0 && serverVersion != cachedVersion) {
+        _log('🔄 后端数据已更新 (v$cachedVersion → v$serverVersion)，将跳过缓存恢复');
+        _dataVersionChanged = true;
+        await prefs.remove(_sessionKey(wordbookId));
+        await prefs.setInt('data_version_$wordbookId', serverVersion);
+      } else {
+        _log('✅ 数据版本一致 (v$serverVersion)，可以恢复缓存');
+      }
+    } catch (e) {
+      _log('⚠️ 数据版本检查失败(继续): $e');
+    }
+  }
+
   /// ★ v5.5: 恢复进度后，从API刷新单词数据（词素/音标等可能已更新）
   /// 只替换 newWords / reviewWords 的内容，保持队列进度不变
   /// 如果API返回的单词集合变了（用户改了学习数量等），则放弃旧进度重新加载
@@ -621,18 +644,23 @@ class StudyNotifier extends StateNotifier<StudyState> {
     state = const StudyState(isLoading: true);
     _log('📥 加载今日任务: wordbookId=$wordbookId (v4.0, _minGap=$_minGap)');
 
-    // ★ 先尝试恢复当天进度
-    final restored = await _restoreSession(wordbookId);
-    if (restored) {
-      // ★ v5.5: 恢复进度后，仍从API刷新单词数据（获取最新词素/音标等）
-      // 如果单词列表变了（学习数量调整等），返回false，走下面的全新加载
-      final matched = await _refreshWordDataKeepProgress(wordbookId);
-      if (matched) {
-        _generateNextQuestion();
-        return;
+    // ★ v5.8: 检查后端数据版本号，版本变化则清除缓存
+    await _checkDataVersion(wordbookId);
+
+    // ★ 先尝试恢复当天进度（数据版本变化时跳过）
+    if (!_dataVersionChanged) {
+      final restored = await _restoreSession(wordbookId);
+      if (restored) {
+        final matched = await _refreshWordDataKeepProgress(wordbookId);
+        if (matched) {
+          _generateNextQuestion();
+          return;
+        }
+        _log('📥 单词列表已变更，重新加载...');
+        state = const StudyState(isLoading: true);
       }
-      _log('📥 单词列表已变更，重新加载...');
-      state = const StudyState(isLoading: true);
+    } else {
+      _log('📥 数据已更新，跳过缓存恢复，从API加载最新数据...');
     }
 
     try {

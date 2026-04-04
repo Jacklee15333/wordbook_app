@@ -63,6 +63,31 @@ app.add_middleware(
 async def ping():
     return {"pong": True, "version": "4.8.0"}
 
+# ★ v5.8: 数据版本号 — 每次后台编辑数据+1，前端检测到变化就刷新缓存
+_DATA_VERSION_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'data_version.txt')
+
+def _get_data_version() -> int:
+    try:
+        with open(_DATA_VERSION_FILE, 'r') as f:
+            return int(f.read().strip())
+    except Exception:
+        return 0
+
+def _bump_data_version() -> int:
+    v = _get_data_version() + 1
+    try:
+        os.makedirs(os.path.dirname(_DATA_VERSION_FILE), exist_ok=True)
+        with open(_DATA_VERSION_FILE, 'w') as f:
+            f.write(str(v))
+    except Exception as e:
+        logger.warning(f"[DATA-VERSION] bump failed: {e}")
+    return v
+
+@app.get("/api/v1/data-version")
+async def get_data_version():
+    """前端启动时检查此版本号，版本变化则刷新缓存"""
+    return {"version": _get_data_version()}
+
 @app.get("/api/v1/media-test")
 async def media_test():
     """Dead simple test - no imports, no DB"""

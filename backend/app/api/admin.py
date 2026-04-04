@@ -26,6 +26,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 
+def _bump_data_version():
+    """通知前端数据已更新"""
+    try:
+        from app.main import _bump_data_version as bump
+        v = bump()
+        logger.info(f"[DATA-VERSION] Bumped to {v}")
+    except Exception as e:
+        logger.warning(f"[DATA-VERSION] bump failed: {e}")
+
+
 def _get_vocab_service():
     """懒加载 vocabulary_service"""
     from app.services.vocabulary_service import get_vocabulary_service
@@ -595,6 +605,7 @@ async def update_word_data(
     except Exception as e:
         logger.warning(f"[KNOWLEDGE] SQLite sync failed: {e}")
 
+    _bump_data_version()
     return {"message": f"已更新: {', '.join(updated_fields)}", "word": word.word}
 
 
@@ -785,6 +796,7 @@ async def batch_update_derivation(
 
     await db.commit()
     logger.info(f"[DERIVATION] ✅ Batch updated {count} words")
+    _bump_data_version()
     return {
         "message": f"已更新 {count} 个单词的构词推导",
         "count": count,
@@ -842,6 +854,7 @@ async def auto_generate_derivations(db: AsyncSession = Depends(get_db)):
 
     await db.commit()
     logger.info(f"[DERIVATION] ✅ Auto-generated {count}/{len(words)} derivations")
+    _bump_data_version()
     return {"message": f"已自动生成 {count} 条推导解释", "count": count, "total_with_morphemes": len(words)}
 
 

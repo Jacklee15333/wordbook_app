@@ -100,6 +100,13 @@ class ApiService {
   }
 
   // ---- Study ----
+
+  /// ★ v5.8: 获取后端数据版本号
+  Future<Map<String, dynamic>> getDataVersion() async {
+    final r = await _dio.get('/data-version');
+    return r.data;
+  }
+
   Future<Map<String, dynamic>> getTodayTask(String wordbookId) async {
     final r = await _dio.get('/study/today', queryParameters: {
       'wordbook_id': wordbookId,
