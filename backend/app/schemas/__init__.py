@@ -85,6 +85,7 @@ class WordResponse(BaseModel):
     syllables: Optional[list[str]] = None  # ★ v5.0: 音节拆分
     syllable_ipa: Optional[list[str]] = None  # ★ v5.3: 各音节音标
     morphemes: Optional[list[dict]] = None  # ★ v5.2: 词根词缀
+    derivation: Optional[str] = None  # ★ v5.8: 构词推导解释
 
     class Config:
         from_attributes = True
