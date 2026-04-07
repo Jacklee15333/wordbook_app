@@ -88,10 +88,101 @@ async def get_data_version():
     """前端启动时检查此版本号，版本变化则刷新缓存"""
     return {"version": _get_data_version()}
 
+@app.post("/api/v1/data-version/bump")
+async def bump_data_version_endpoint():
+    """手动递增数据版本号，触发前端刷新"""
+    v = _bump_data_version()
+    return {"version": v, "message": f"数据版本已更新到 v{v}"}
+
 @app.get("/api/v1/media-test")
 async def media_test():
     """Dead simple test - no imports, no DB"""
     return {"ok": True, "msg": "media-test works", "version": "4.8.0"}
+
+
+# ★ v5.8: 数据管道自动体检
+@app.post("/api/v1/system/health-check")
+async def system_health_check():
+    """启动时自动检查数据管道是否畅通，修复常见问题"""
+    issues = []
+    fixes = []
+
+    # ── 检查1: 数据库列是否完整 ──
+    expected_columns = ['syllables', 'syllable_ipa', 'morphemes', 'derivation']
+    try:
+        async with engine.begin() as conn:
+            result = await conn.execute(text(
+                "SELECT column_name FROM information_schema.columns WHERE table_name='words'"
+            ))
+            db_columns = {row[0] for row in result.all()}
+
+            for col in expected_columns:
+                if col not in db_columns:
+                    col_type = 'VARCHAR(500)' if col == 'derivation' else 'JSONB'
+                    await conn.execute(text(f"ALTER TABLE words ADD COLUMN {col} {col_type}"))
+                    fixes.append(f"数据库: 自动添加 {col} 列")
+                    logger.info(f"[HEALTH] ✅ Auto-added column: {col}")
+    except Exception as e:
+        issues.append(f"数据库列检查失败: {e}")
+
+    # ── 检查2: Schema 字段是否完整 ──
+    try:
+        from app.schemas import WordResponse
+        schema_fields = set(WordResponse.model_fields.keys())
+        missing_in_schema = []
+        for col in expected_columns:
+            if col not in schema_fields:
+                missing_in_schema.append(col)
+        if missing_in_schema:
+            issues.append(f"Schema缺少字段: {', '.join(missing_in_schema)} (需要手动更新 schemas/__init__.py)")
+    except Exception as e:
+        issues.append(f"Schema检查失败: {e}")
+
+    # ── 检查3: API返回是否包含关键字段 ──
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(Word).where(Word.morphemes.isnot(None)).limit(1)
+            )
+            sample_word = result.scalars().first()
+            if sample_word:
+                from app.schemas import WordResponse
+                response_data = WordResponse.model_validate(sample_word).model_dump()
+                for col in expected_columns:
+                    if col not in response_data:
+                        issues.append(f"API返回缺少 {col} 字段 (Schema未声明)")
+    except Exception as e:
+        issues.append(f"API返回检查失败: {e}")
+
+    # ── 检查4: 数据统计 ──
+    stats = {}
+    try:
+        async with async_session() as session:
+            total = (await session.execute(select(func.count(Word.id)))).scalar() or 0
+            has_syl = (await session.execute(select(func.count(Word.id)).where(Word.syllables.isnot(None)))).scalar() or 0
+            has_morph = (await session.execute(select(func.count(Word.id)).where(Word.morphemes.isnot(None)))).scalar() or 0
+            has_deriv = (await session.execute(select(func.count(Word.id)).where(Word.derivation.isnot(None)))).scalar() or 0
+            stats = {
+                "total_words": total,
+                "has_syllables": has_syl,
+                "has_morphemes": has_morph,
+                "has_derivation": has_deriv,
+            }
+    except Exception as e:
+        issues.append(f"数据统计失败: {e}")
+
+    # ── 检查5: 如果有更新，自动bumpt版本号 ──
+    if fixes:
+        _bump_data_version()
+        fixes.append("数据版本号已更新，前端将自动刷新")
+
+    healthy = len(issues) == 0
+    return {
+        "healthy": healthy,
+        "issues": issues,
+        "auto_fixes": fixes,
+        "stats": stats,
+    }
 
 
 @app.get("/test/{some_id}/action")

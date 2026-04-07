@@ -367,13 +367,36 @@ goto :wait_loop
 echo.
 
 REM ============================================
-REM  [6.5/7] Auto-fix missing phonetics + apply knowledge base
+REM  [6.5/7] System health check + auto-fix
 REM ============================================
-echo [6.5/7] Auto-fixing missing data...
+echo [6.5/7] Running system health check...
+echo.
+
+REM --- Health check ---
+curl -s -X POST http://localhost:!BACKEND_PORT!/api/v1/system/health-check -o "%TEMP%\wb_health.json" 2>nul
+if exist "%TEMP%\wb_health.json" (
+    echo   --- Health Check Results ---
+    powershell -Command "$j=Get-Content '%TEMP%\wb_health.json' -Raw | ConvertFrom-Json; Write-Host ('   Status: ' + $(if($j.healthy){'ALL OK'}else{'ISSUES FOUND'})); if($j.auto_fixes){$j.auto_fixes | ForEach-Object{Write-Host ('   [FIX] ' + $_)}}; if($j.issues){$j.issues | ForEach-Object{Write-Host ('   [WARN] ' + $_)}}; $s=$j.stats; if($s){Write-Host ('   Words: ' + $s.total_words + '  Syllables: ' + $s.has_syllables + '  Morphemes: ' + $s.has_morphemes + '  Derivation: ' + $s.has_derivation)}"
+    del "%TEMP%\wb_health.json" >nul 2>&1
+) else (
+    echo   Health check skipped (backend may still be starting^)
+)
+echo.
+
+REM --- Auto-fix phonetics ---
 curl -s -X POST http://localhost:!BACKEND_PORT!/api/v1/admin/fix-phonetics >nul 2>&1
-echo   Phonetics fix triggered (runs in background).
+echo   Phonetics auto-fix triggered.
+
+REM --- Apply knowledge base ---
 curl -s -X POST http://localhost:!BACKEND_PORT!/api/v1/admin/knowledge-base/apply-to-pg >nul 2>&1
 echo   Knowledge base auto-apply triggered.
+
+REM --- Bump data version if code was updated ---
+if !UPDATED!==0 goto :skip_version_bump
+echo   Code updated - bumping data version...
+curl -s -X POST http://localhost:!BACKEND_PORT!/api/v1/data-version/bump >nul 2>&1
+echo   Frontend will auto-refresh on next launch.
+:skip_version_bump
 echo.
 
 REM ============================================
